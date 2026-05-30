@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -25,7 +24,6 @@ func main() {
 	}
 
 	cmd := os.Args[1]
-	flag.CommandLine.Parse(os.Args[2:])
 
 	cfg, err := config.Load()
 	if err != nil {

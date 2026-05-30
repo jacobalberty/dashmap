@@ -9,7 +9,7 @@ import (
 func TestLoadDefaults(t *testing.T) {
 	// Clear relevant env vars so defaults apply.
 	for _, k := range []string{"HTTP_ADDR", "DATABASE_URL", "VIDEO_ROOT", "DEFAULT_FPS", "SCAN_INTERVAL", "LOG_LEVEL", "LOG_FORMAT", "AUTO_MIGRATE"} {
-		os.Unsetenv(k)
+		_ = os.Unsetenv(k)
 	}
 
 	c, err := Load()
