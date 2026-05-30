@@ -4,6 +4,14 @@ modules:
 lint:
   use:
     - STANDARD
+  # dashcam.proto is vendored from Tesla; names must match the binary format exactly.
+  ignore_only:
+    PACKAGE_DEFINED:
+      - proto/dashcam.proto
+    ENUM_ZERO_VALUE_SUFFIX:
+      - proto/dashcam.proto
+    ENUM_VALUE_PREFIX:
+      - proto/dashcam.proto
 breaking:
   use:
     - FILE

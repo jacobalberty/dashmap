@@ -8,8 +8,9 @@ linters:
     - ineffassign
     - unused
     - gosimple
+  exclusions:
+    paths:
+      - internal/web/node_modules
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-dirs:
-    - internal/web/node_modules
