@@ -1,0 +1,16 @@
+# Go
+/dashmap
+*.test
+/coverage.out
+
+# Frontend
+internal/web/dist/
+internal/web/node_modules/
+
+# Env
+.env
+
+# Editor
+.idea/
+.vscode/
+*.swp
