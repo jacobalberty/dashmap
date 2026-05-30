@@ -129,9 +129,8 @@ func runWorker(cfg *config.Config) {
 		os.Exit(1)
 	}
 	defer pool.Close()
-	_ = pool // used in later stories for queries
 
-	ingest.Run(ctx, cfg.VideoRoot, cfg.ScanInterval)
+	ingest.Run(ctx, cfg, pool)
 }
 
 func runMigrate(cfg *config.Config) {

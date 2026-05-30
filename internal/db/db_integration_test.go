@@ -107,13 +107,18 @@ func TestSchemaCoreQuery(t *testing.T) {
 		t.Fatalf("insert segment: %v", err)
 	}
 
-	// Insert track_point.
-	if _, err := tx.Exec(ctx,
-		`INSERT INTO track_points (car_id, clip_id, segment_id, ts, lat, lon)
-		 VALUES ($1, $2, $3, $4, $5, $6)`,
-		carID, clipID, segmentID, now, 37.4221, -122.0841,
-	); err != nil {
-		t.Fatalf("insert track_point: %v", err)
+	// Insert track_points spanning 2 hours at 1-second intervals so the
+	// 2-second query window is selective enough for the planner to prefer
+	// the ts index over the segment_id index.
+	for i := range 7200 {
+		ts := now.Add(time.Duration(i-3600) * time.Second)
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO track_points (car_id, clip_id, segment_id, ts, lat, lon)
+			 VALUES ($1, $2, $3, $4, $5, $6)`,
+			carID, clipID, segmentID, ts, 37.4221, -122.0841,
+		); err != nil {
+			t.Fatalf("insert track_point: %v", err)
+		}
 	}
 
 	// Run the core query and assert the inserted rel_path is returned.
