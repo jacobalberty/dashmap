@@ -1,4 +1,4 @@
-.PHONY: run-api run-worker migrate proto-gen web-dev web-build lint test docker-build
+.PHONY: run-api run-worker migrate proto-gen web-dev web-build lint test test-integration docker-build
 
 # Load .env if present
 -include .env
@@ -33,7 +33,7 @@ test:
 	go test $(GO_PKGS)
 
 test-integration:
-	go test -tags integration $(GO_PKGS)
+	docker compose --profile test run --rm test-runner
 
 docker-build:
 	docker buildx build --platform linux/amd64 -t dashmap:dev .

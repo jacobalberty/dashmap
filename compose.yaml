@@ -46,5 +46,25 @@ services:
       postgres:
         condition: service_healthy
 
+  test-runner:
+    profiles: ["test"]
+    image: golang:1.26-bookworm
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - go-mod-cache:/go/pkg/mod
+    environment:
+      DATABASE_URL: postgres://dashmap:dashmap@postgres:5432/dashmap?sslmode=disable
+      GOMODCACHE: /go/pkg/mod
+      GOFLAGS: -buildvcs=false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - "go test -tags integration $(go list ./cmd/... ./internal/... | grep -v node_modules)"
+
 volumes:
   pgdata:
+  go-mod-cache:
