@@ -18,4 +18,5 @@ RUN CGO_ENABLED=0 GOOS=linux go build -tags embedspa -o /dashmap ./cmd/dashmap
 # Stage 3: minimal distroless runtime
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=backend /dashmap /dashmap
-ENTRYPOINT ["/dashmap", "serve"]
+ENTRYPOINT ["/dashmap"]
+CMD ["serve"]

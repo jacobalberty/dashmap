@@ -38,7 +38,7 @@ services:
 
   worker:
     build: .
-    command: ["/dashmap", "worker"]
+    command: ["worker"]
     environment:
       DATABASE_URL: postgres://dashmap:dashmap@postgres:5432/dashmap?sslmode=disable
       VIDEO_ROOT: /footage
