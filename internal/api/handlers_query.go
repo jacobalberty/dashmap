@@ -18,7 +18,7 @@ import (
 type Querier interface {
 	CarIDByKey(ctx context.Context, key string) (int64, error)
 	ListCars(ctx context.Context) ([]query.Car, error)
-	Calendar(ctx context.Context, carID int64, from, to time.Time) ([]query.CalendarDay, error)
+	Calendar(ctx context.Context, carID int64, from, to time.Time, tz string) ([]query.CalendarDay, error)
 	ListClips(ctx context.Context, carID int64, from, to time.Time, kinds []string, limit, offset int) ([]query.ClipListItem, bool, error)
 	ClipMarkers(ctx context.Context, carID int64, from, to time.Time, max int) ([]query.ClipMarker, bool, error)
 	Track(ctx context.Context, carID int64, from, to time.Time) ([]query.TrackPoint, error)
@@ -76,7 +76,14 @@ func (s *Server) handleCalendar(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	days, err := s.deps.Querier.Calendar(r.Context(), carID, from, to)
+	tz := q.Get("tz")
+	if tz == "" {
+		tz = "UTC"
+	} else if _, err := time.LoadLocation(tz); err != nil {
+		writeErr(w, http.StatusBadRequest, codeBadRequest, "invalid tz: "+tz)
+		return
+	}
+	days, err := s.deps.Querier.Calendar(r.Context(), carID, from, to, tz)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, codeInternal, "database error")
 		return
