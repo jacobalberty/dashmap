@@ -23,6 +23,10 @@ services:
       DATABASE_URL: postgres://dashmap:dashmap@postgres:5432/dashmap?sslmode=disable
       HTTP_ADDR: ":8080"
       LOG_FORMAT: json
+      # Optionally mount a regional .pmtiles file and set this env var to enable the basemap.
+      # Example: BASEMAP_PMTILES: /basemap/my-region.pmtiles
+      # Download a regional extract from https://maps.protomaps.com/builds/ (use pmtiles extract).
+      # BASEMAP_PMTILES:
     depends_on:
       postgres:
         condition: service_healthy

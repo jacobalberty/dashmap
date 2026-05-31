@@ -22,6 +22,9 @@ type Config struct {
 	SEISampleRate     float64
 	IngestConcurrency int
 
+	// Story 05
+	BasemapPMTiles string // absolute path to a .pmtiles file; empty = disabled
+
 	// API (Story 04)
 	ZipCompression    string        // "store" | "deflate"
 	TrackGap          time.Duration // gap that starts a new track run
@@ -42,6 +45,7 @@ func Load() (*Config, error) {
 		AutoMigrate:    getEnvBool("AUTO_MIGRATE", true),
 		CarKey:         getEnv("CAR_KEY", "default"),
 		CarDisplayName: os.Getenv("CAR_DISPLAY_NAME"),
+		BasemapPMTiles: os.Getenv("BASEMAP_PMTILES"),
 		ZipCompression: getEnv("ZIP_COMPRESSION", "store"),
 	}
 

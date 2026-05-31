@@ -26,6 +26,10 @@ func (s *Server) routes() http.Handler {
 	// JSON 404 for any unmatched /api/* path (so it never falls through to the SPA).
 	mux.HandleFunc("GET /api/", s.handleAPINotFound)
 
+	// Basemap: exact path registered unconditionally so it 404s cleanly (not index.html).
+	mux.HandleFunc("GET /tiles/basemap.pmtiles", s.handleBasemap)
+	mux.HandleFunc("HEAD /tiles/basemap.pmtiles", s.handleBasemap)
+
 	if spaHandler := web.Handler(); spaHandler != nil {
 		mux.Handle("/", spaHandler)
 	}

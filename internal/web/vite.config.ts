@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { fileURLToPath, URL } from 'node:url'
 
 import { defineConfig } from 'vite'
@@ -13,8 +14,14 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': 'http://localhost:8080',
+      '/tiles': 'http://localhost:8080',
       '/livez': 'http://localhost:8080',
       '/readyz': 'http://localhost:8080',
     },
+  },
+  test: {
+    environment: 'node',
+    globals: true,
+    include: ['src/**/__tests__/**/*.test.ts'],
   },
 })

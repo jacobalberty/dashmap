@@ -39,7 +39,7 @@ type stubQuerier struct {
 
 func (s *stubQuerier) CarIDByKey(context.Context, string) (int64, error) { return s.carID, s.carErr }
 func (s *stubQuerier) ListCars(context.Context) ([]query.Car, error)     { return s.cars, nil }
-func (s *stubQuerier) Calendar(context.Context, int64, time.Time, time.Time) ([]query.CalendarDay, error) {
+func (s *stubQuerier) Calendar(context.Context, int64, time.Time, time.Time, string) ([]query.CalendarDay, error) {
 	return []query.CalendarDay{}, nil
 }
 func (s *stubQuerier) ListClips(context.Context, int64, time.Time, time.Time, []string, int, int) ([]query.ClipListItem, bool, error) {

@@ -186,10 +186,14 @@ func (s *Store) ListCars(ctx context.Context) ([]Car, error) {
 	return cars, rows.Err()
 }
 
-// Calendar returns per-day clip counts (UTC buckets) in [from, to).
-func (s *Store) Calendar(ctx context.Context, carID int64, from, to time.Time) ([]CalendarDay, error) {
+// Calendar returns per-day clip counts bucketed by tz (e.g. "America/Los_Angeles") in [from, to).
+// tz defaults to "UTC" when empty.
+func (s *Store) Calendar(ctx context.Context, carID int64, from, to time.Time, tz string) ([]CalendarDay, error) {
+	if tz == "" {
+		tz = "UTC"
+	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT (clip_ts AT TIME ZONE 'UTC')::date AS d,
+		SELECT (clip_ts AT TIME ZONE $4)::date AS d,
 		       count(*)                              AS total,
 		       count(*) FILTER (WHERE kind='recent') AS recent,
 		       count(*) FILTER (WHERE kind='saved')  AS saved,
@@ -198,7 +202,7 @@ func (s *Store) Calendar(ctx context.Context, carID int64, from, to time.Time) (
 		WHERE car_id = $1 AND clip_ts >= $2 AND clip_ts < $3
 		GROUP BY d
 		ORDER BY d`,
-		carID, from, to)
+		carID, from, to, tz)
 	if err != nil {
 		return nil, err
 	}
