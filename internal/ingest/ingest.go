@@ -37,10 +37,16 @@ func Run(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) {
 
 	scan := func() {
 		slog.Info("ingest: scan started")
+		if err := markScanStarted(ctx, pool, carID); err != nil {
+			slog.Warn("ingest: mark scan started failed", "err", err)
+		}
 		n, err := runScan(ctx, cfg, pool, carID)
 		if err != nil {
 			slog.Error("ingest: scan error", "err", err)
 			return
+		}
+		if err := markScanCompleted(ctx, pool, carID, n); err != nil {
+			slog.Warn("ingest: mark scan completed failed", "err", err)
 		}
 		slog.Info("ingest: scan complete",
 			"clips_processed", n.processed,

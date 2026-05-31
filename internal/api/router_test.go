@@ -13,7 +13,7 @@ type stubPinger struct{ err error }
 func (s *stubPinger) Ping(_ context.Context) error { return s.err }
 
 func TestHandleLivez(t *testing.T) {
-	srv := NewServer(":0", &stubPinger{})
+	srv := NewServer(":0", Deps{Pinger: &stubPinger{}})
 	req := httptest.NewRequest(http.MethodGet, "/livez", nil)
 	rec := httptest.NewRecorder()
 	srv.routes().ServeHTTP(rec, req)
@@ -31,7 +31,7 @@ func TestHandleLivez(t *testing.T) {
 }
 
 func TestHandleReadyz_OK(t *testing.T) {
-	srv := NewServer(":0", &stubPinger{})
+	srv := NewServer(":0", Deps{Pinger: &stubPinger{}})
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
 	srv.routes().ServeHTTP(rec, req)
@@ -42,7 +42,7 @@ func TestHandleReadyz_OK(t *testing.T) {
 }
 
 func TestHandleReadyz_DBDown(t *testing.T) {
-	srv := NewServer(":0", &stubPinger{err: context.DeadlineExceeded})
+	srv := NewServer(":0", Deps{Pinger: &stubPinger{err: context.DeadlineExceeded}})
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
 	srv.routes().ServeHTTP(rec, req)

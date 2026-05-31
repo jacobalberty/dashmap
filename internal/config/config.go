@@ -9,18 +9,27 @@ import (
 )
 
 type Config struct {
-	HTTPAddr           string
-	DatabaseURL        string
-	VideoRoot          string
-	DefaultFPS         float64
-	ScanInterval       time.Duration
-	LogLevel           string
-	LogFormat          string
-	AutoMigrate        bool
-	CarKey             string
-	CarDisplayName     string
-	SEISampleRate      float64
-	IngestConcurrency  int
+	HTTPAddr          string
+	DatabaseURL       string
+	VideoRoot         string
+	DefaultFPS        float64
+	ScanInterval      time.Duration
+	LogLevel          string
+	LogFormat         string
+	AutoMigrate       bool
+	CarKey            string
+	CarDisplayName    string
+	SEISampleRate     float64
+	IngestConcurrency int
+
+	// API (Story 04)
+	ZipCompression    string        // "store" | "deflate"
+	TrackGap          time.Duration // gap that starts a new track run
+	TrackSimplifyM    float64       // Douglas–Peucker tolerance, metres
+	TrackMaxPoints    int           // hard cap on /api/track points
+	ClipMarkersMax    int           // hard cap on /api/clip-markers rows
+	ClipsDefaultLimit int           // default /api/clips page size
+	ClipsMaxLimit     int           // max /api/clips page size
 }
 
 func Load() (*Config, error) {
@@ -33,6 +42,7 @@ func Load() (*Config, error) {
 		AutoMigrate:    getEnvBool("AUTO_MIGRATE", true),
 		CarKey:         getEnv("CAR_KEY", "default"),
 		CarDisplayName: os.Getenv("CAR_DISPLAY_NAME"),
+		ZipCompression: getEnv("ZIP_COMPRESSION", "store"),
 	}
 
 	fps, err := strconv.ParseFloat(getEnv("DEFAULT_FPS", "36"), 64)
@@ -59,6 +69,39 @@ func Load() (*Config, error) {
 	}
 	c.IngestConcurrency = concurrency
 
+	if c.ZipCompression != "store" && c.ZipCompression != "deflate" {
+		return nil, fmt.Errorf("invalid ZIP_COMPRESSION %q: want store or deflate", c.ZipCompression)
+	}
+
+	trackGap, err := time.ParseDuration(getEnv("TRACK_GAP", "2m"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid TRACK_GAP: %w", err)
+	}
+	c.TrackGap = trackGap
+
+	simplify, err := strconv.ParseFloat(getEnv("TRACK_SIMPLIFY_M", "5"), 64)
+	if err != nil || simplify < 0 {
+		return nil, fmt.Errorf("invalid TRACK_SIMPLIFY_M: %w", err)
+	}
+	c.TrackSimplifyM = simplify
+
+	c.TrackMaxPoints, err = getEnvPositiveInt("TRACK_MAX_POINTS", 10000)
+	if err != nil {
+		return nil, err
+	}
+	c.ClipMarkersMax, err = getEnvPositiveInt("CLIP_MARKERS_MAX", 10000)
+	if err != nil {
+		return nil, err
+	}
+	c.ClipsDefaultLimit, err = getEnvPositiveInt("CLIPS_DEFAULT_LIMIT", 500)
+	if err != nil {
+		return nil, err
+	}
+	c.ClipsMaxLimit, err = getEnvPositiveInt("CLIPS_MAX_LIMIT", 2000)
+	if err != nil {
+		return nil, err
+	}
+
 	return c, nil
 }
 
@@ -79,4 +122,12 @@ func getEnvBool(key string, def bool) bool {
 		return def
 	}
 	return b
+}
+
+func getEnvPositiveInt(key string, def int) (int, error) {
+	n, err := strconv.Atoi(getEnv(key, strconv.Itoa(def)))
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("invalid %s: want a positive integer", key)
+	}
+	return n, nil
 }

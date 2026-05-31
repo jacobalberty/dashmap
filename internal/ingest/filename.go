@@ -9,24 +9,48 @@ import (
 	"time"
 )
 
-// knownCameras is the set of valid Tesla dashcam camera suffixes.
-var knownCameras = map[string]bool{
-	"front":          true,
-	"back":           true,
-	"left_repeater":  true,
-	"right_repeater": true,
-	"left_pillar":    true,
-	"right_pillar":   true,
+// CameraPriority is the canonical display/order precedence for Tesla dashcam
+// cameras (front, then back, repeaters, pillars). It drives SEI representative
+// selection and segment/camera ordering in API responses (Story 04). Cameras not
+// in this list sort after these, alphabetically.
+var CameraPriority = []string{
+	"front",
+	"back",
+	"left_repeater",
+	"right_repeater",
+	"left_pillar",
+	"right_pillar",
 }
+
+// CameraRank returns the sort rank of a camera per CameraPriority; unknown
+// cameras get len(CameraPriority) so they sort after all known cameras.
+func CameraRank(camera string) int {
+	for i, c := range CameraPriority {
+		if c == camera {
+			return i
+		}
+	}
+	return len(CameraPriority)
+}
+
+// knownCameras is the set of valid Tesla dashcam camera suffixes, derived from
+// CameraPriority so there is a single source of truth.
+var knownCameras = func() map[string]bool {
+	m := make(map[string]bool, len(CameraPriority))
+	for _, c := range CameraPriority {
+		m[c] = true
+	}
+	return m
+}()
 
 // segment represents one camera file parsed from a Tesla segment filename.
 type segment struct {
-	ts       time.Time
-	camera   string
-	absPath  string
-	relPath  string // relative to videoRoot
-	size     int64
-	mtime    time.Time
+	ts      time.Time
+	camera  string
+	absPath string
+	relPath string // relative to videoRoot
+	size    int64
+	mtime   time.Time
 }
 
 // clip is a group of camera segments sharing the same timestamp.

@@ -7,22 +7,34 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jacobalberty/dashmap/internal/config"
 	"github.com/jacobalberty/dashmap/internal/db"
+	"github.com/jacobalberty/dashmap/internal/media"
 )
 
-type Server struct {
-	srv    *http.Server
-	pinger db.Pinger
+// Deps are the dependencies the HTTP server needs. Querier is an interface so
+// handlers can be unit-tested with a stub; Resolver is concrete (tests use a real
+// resolver over a temp directory).
+type Deps struct {
+	Querier  Querier
+	Resolver *media.Resolver
+	Pinger   db.Pinger
+	Cfg      *config.Config
 }
 
-func NewServer(addr string, pinger db.Pinger) *Server {
-	s := &Server{pinger: pinger}
+type Server struct {
+	srv  *http.Server
+	deps Deps
+}
+
+func NewServer(addr string, deps Deps) *Server {
+	s := &Server{deps: deps}
 	s.srv = &http.Server{
 		Addr:              addr,
 		Handler:           chain(s.routes(), withRecovery, withLogging),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       120 * time.Second,
-		// WriteTimeout intentionally unset: range-streaming (Story 04) needs unbounded writes.
+		// WriteTimeout intentionally unset: range-streaming needs unbounded writes.
 	}
 	return s
 }

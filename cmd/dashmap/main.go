@@ -15,6 +15,8 @@ import (
 	"github.com/jacobalberty/dashmap/internal/config"
 	"github.com/jacobalberty/dashmap/internal/db"
 	"github.com/jacobalberty/dashmap/internal/ingest"
+	"github.com/jacobalberty/dashmap/internal/media"
+	"github.com/jacobalberty/dashmap/internal/query"
 )
 
 func main() {
@@ -74,6 +76,17 @@ func runServe(cfg *config.Config) {
 		slog.Error("DATABASE_URL is required")
 		os.Exit(1)
 	}
+	if cfg.VideoRoot == "" {
+		slog.Error("VIDEO_ROOT is required")
+		os.Exit(1)
+	}
+
+	resolver, err := media.NewResolver(cfg.VideoRoot)
+	if err != nil {
+		slog.Error("video root open failed", "video_root", cfg.VideoRoot, "err", err)
+		os.Exit(1)
+	}
+	defer func() { _ = resolver.Close() }()
 
 	if cfg.AutoMigrate {
 		slog.Info("running migrations")
@@ -90,7 +103,12 @@ func runServe(cfg *config.Config) {
 	}
 	defer pool.Close()
 
-	srv := api.NewServer(cfg.HTTPAddr, db.NewPinger(pool))
+	srv := api.NewServer(cfg.HTTPAddr, api.Deps{
+		Querier:  query.New(pool),
+		Resolver: resolver,
+		Pinger:   db.NewPinger(pool),
+		Cfg:      cfg,
+	})
 
 	errCh := make(chan error, 1)
 	go func() {

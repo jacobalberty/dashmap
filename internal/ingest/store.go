@@ -10,12 +10,12 @@ import (
 
 // segmentState holds the DB-persisted state used for idempotency decisions.
 type segmentState struct {
-	id                   int64
-	sizBytes             *int64
-	fileMtime            *time.Time
-	seiRateHz            *float32
-	seiExtractorVersion  *int32
-	hasSEI               bool
+	id                  int64
+	sizBytes            *int64
+	fileMtime           *time.Time
+	seiRateHz           *float32
+	seiExtractorVersion *int32
+	hasSEI              bool
 }
 
 // upsertCar upserts a car row by key and returns its id.
@@ -31,6 +31,36 @@ func upsertCar(ctx context.Context, pool *pgxpool.Pool, key, displayName, hwGen 
 		key, displayName, hwGen,
 	).Scan(&id)
 	return id, err
+}
+
+// markScanStarted records the start of an ingest scan for a car (Story 04 status).
+func markScanStarted(ctx context.Context, pool *pgxpool.Pool, carID int64) error {
+	_, err := pool.Exec(ctx, `
+		INSERT INTO ingest_state (car_id, last_scan_started_at, updated_at)
+		VALUES ($1, now(), now())
+		ON CONFLICT (car_id) DO UPDATE
+		  SET last_scan_started_at = now(),
+		      updated_at           = now()`,
+		carID,
+	)
+	return err
+}
+
+// markScanCompleted records the completion of an ingest scan and its counts.
+func markScanCompleted(ctx context.Context, pool *pgxpool.Pool, carID int64, c scanCounts) error {
+	_, err := pool.Exec(ctx, `
+		INSERT INTO ingest_state (car_id, last_scan_completed_at, clips_processed, clips_skipped, clips_errored, track_points_written, updated_at)
+		VALUES ($1, now(), $2, $3, $4, $5, now())
+		ON CONFLICT (car_id) DO UPDATE
+		  SET last_scan_completed_at = now(),
+		      clips_processed        = EXCLUDED.clips_processed,
+		      clips_skipped          = EXCLUDED.clips_skipped,
+		      clips_errored          = EXCLUDED.clips_errored,
+		      track_points_written   = EXCLUDED.track_points_written,
+		      updated_at             = now()`,
+		carID, c.processed, c.skipped, c.errored, c.trackPoints,
+	)
+	return err
 }
 
 // updateCarHW updates only the hw_generation when it has changed.
