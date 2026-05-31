@@ -46,6 +46,52 @@ docker compose up
 # app → http://localhost:8080
 ```
 
+## Basemap Setup (Story 05+)
+
+The map uses self-hosted Protomaps **PMTiles** for privacy (no external tile servers). It's
+optional — without it, the map still shows the GPS track and clip markers on a blank dark
+background.
+
+To enable it, extract a regional cutout of the Protomaps planet basemap and point the server
+at the resulting file.
+
+1. **Install the `pmtiles` CLI** — download a binary from
+   [go-pmtiles releases](https://github.com/protomaps/go-pmtiles/releases), or use the
+   `protomaps/go-pmtiles` Docker image.
+
+2. **Find your bounding box** for the area your footage covers (e.g. via
+   [bboxfinder.com](http://bboxfinder.com/)) as `minLon,minLat,maxLon,maxLat`.
+
+3. **Extract a regional cutout directly from a daily build** — `pmtiles extract` reads the
+   remote file over HTTP range requests, so you only download your region (not the ~120 GB
+   planet). Pick a recent build date from
+   [maps.protomaps.com/builds](https://maps.protomaps.com/builds/):
+   ```sh
+   pmtiles extract https://build.protomaps.com/20260518.pmtiles my-region.pmtiles \
+     --bbox=-122.5,37.7,-122.3,37.8 \
+     --maxzoom=14
+   ```
+   Each extra zoom level roughly doubles the file size; `--maxzoom=14` is plenty for
+   street-level detail. Use a **v4** basemap build (its tile schema matches the
+   `@protomaps/basemaps` v5 style used by the frontend).
+
+4. **Run with the basemap:**
+   ```sh
+   export BASEMAP_PMTILES=/path/to/my-region.pmtiles
+   make run-api
+   ```
+   The server serves it at `GET /tiles/basemap.pmtiles` with HTTP range support.
+
+5. **Docker Compose** — mount the file and set the env var:
+   ```yaml
+   services:
+     app:
+       environment:
+         BASEMAP_PMTILES: /basemap/my-region.pmtiles
+       volumes:
+         - /path/to/my-region.pmtiles:/basemap/my-region.pmtiles:ro
+   ```
+
 **Run tests:**
 ```sh
 make test                # unit tests (no DB required)
