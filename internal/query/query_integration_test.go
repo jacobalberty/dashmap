@@ -119,7 +119,7 @@ func TestQueryReadLayer(t *testing.T) {
 	}
 
 	// Calendar
-	days, err := s.Calendar(ctx, carID, from, to)
+	days, err := s.Calendar(ctx, carID, from, to, "UTC")
 	if err != nil || len(days) != 1 {
 		t.Fatalf("Calendar = %+v,%v want 1 day", days, err)
 	}
