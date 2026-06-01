@@ -72,6 +72,7 @@ type ClipListItem struct {
 	Reason    *string   `json:"reason"`
 	City      *string   `json:"city"`
 	ThumbURL  *string   `json:"thumb_url"`
+	EventID   *int64    `json:"event_id"` // groups clips of one Saved/Sentry event
 	Cameras   []string  `json:"cameras"`
 }
 
@@ -100,6 +101,25 @@ type ClipSegment struct {
 	SizeBytes   *int64 `json:"size_bytes"`
 }
 
+type ClipTrackPoint struct {
+	TS                       time.Time `json:"ts"`
+	Lat                      float64   `json:"lat"`
+	Lon                      float64   `json:"lon"`
+	SpeedMPS                 *float32  `json:"speed_mps"`
+	HeadingDeg               *float64  `json:"heading_deg"`
+	Gear                     *int16    `json:"gear"`
+	Autopilot                *int16    `json:"autopilot"`
+	BlinkerLeft              *bool     `json:"blinker_left"`
+	BlinkerRight             *bool     `json:"blinker_right"`
+	BrakeApplied             *bool     `json:"brake_applied"`
+	AcceleratorPedalPosition *float32  `json:"accelerator_pedal_position"`
+	SteeringWheelAngle       *float32  `json:"steering_wheel_angle"`
+	AccelX                   *float64  `json:"accel_x"`
+	AccelY                   *float64  `json:"accel_y"`
+	AccelZ                   *float64  `json:"accel_z"`
+	SeiVersion               *int32    `json:"sei_version"`
+}
+
 type ClipEvent struct {
 	EventTS time.Time `json:"event_ts"`
 	Reason  *string   `json:"reason"`
@@ -120,6 +140,8 @@ type ClipDetail struct {
 	DownloadURL string        `json:"download_url"` // zip of all cameras
 	Event       *ClipEvent    `json:"event"`
 	Segments    []ClipSegment `json:"segments"`
+	PrevClipID  *int64        `json:"prev_clip_id"`
+	NextClipID  *int64        `json:"next_clip_id"`
 }
 
 type StatusCounts struct {
@@ -255,6 +277,7 @@ func (s *Store) ListClips(ctx context.Context, carID int64, from, to time.Time, 
 			&it.HasSEI, &it.DurationS, &it.Reason, &it.City, &eventID, &thumbRel, &it.Cameras); err != nil {
 			return nil, false, err
 		}
+		it.EventID = eventID
 		if eventID != nil && thumbRel != nil {
 			u := thumbURL(*eventID)
 			it.ThumbURL = &u
@@ -339,13 +362,20 @@ func (s *Store) ClipDetail(ctx context.Context, clipID int64) (*ClipDetail, erro
 	var evTS *time.Time
 	err := s.pool.QueryRow(ctx, `
 		SELECT c.id, c.car_id, c.clip_ts, c.kind, c.lat, c.lon, c.has_sei, c.duration_s,
-		       c.event_id, e.event_ts, e.reason, e.city, e.camera, e.thumb_rel_path
+		       c.event_id, e.event_ts, e.reason, e.city, e.camera, e.thumb_rel_path,
+		       (SELECT id FROM clips WHERE car_id = c.car_id
+		        AND (clip_ts, id) < (c.clip_ts, c.id)
+		        ORDER BY clip_ts DESC, id DESC LIMIT 1),
+		       (SELECT id FROM clips WHERE car_id = c.car_id
+		        AND (clip_ts, id) > (c.clip_ts, c.id)
+		        ORDER BY clip_ts ASC, id ASC LIMIT 1)
 		FROM clips c
 		LEFT JOIN events e ON e.id = c.event_id
 		WHERE c.id = $1`,
 		clipID,
 	).Scan(&d.ID, &d.CarID, &d.ClipTS, &d.Kind, &d.Lat, &d.Lon, &d.HasSEI, &d.DurationS,
-		&eventID, &evTS, &ev.Reason, &ev.City, &ev.Camera, &thumbRel)
+		&eventID, &evTS, &ev.Reason, &ev.City, &ev.Camera, &thumbRel,
+		&d.PrevClipID, &d.NextClipID)
 	if err != nil {
 		return nil, err
 	}
@@ -418,6 +448,34 @@ func (s *Store) ClipZip(ctx context.Context, clipID int64) (*ClipZipInfo, error)
 		return nil, pgx.ErrNoRows
 	}
 	return &info, nil
+}
+
+// ClipTrack returns all telemetry points for a clip in ascending time order.
+// Returns an empty slice (not an error) when the clip has no SEI data.
+func (s *Store) ClipTrack(ctx context.Context, clipID int64) ([]ClipTrackPoint, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT ts, lat, lon, speed_mps, heading_deg, gear, autopilot,
+		       blinker_left, blinker_right, brake_applied,
+		       accelerator_pedal_position, steering_wheel_angle,
+		       accel_x, accel_y, accel_z, sei_version
+		FROM track_points WHERE clip_id = $1 ORDER BY ts ASC`,
+		clipID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	pts := []ClipTrackPoint{}
+	for rows.Next() {
+		var p ClipTrackPoint
+		if err := rows.Scan(&p.TS, &p.Lat, &p.Lon, &p.SpeedMPS, &p.HeadingDeg,
+			&p.Gear, &p.Autopilot, &p.BlinkerLeft, &p.BlinkerRight, &p.BrakeApplied,
+			&p.AcceleratorPedalPosition, &p.SteeringWheelAngle,
+			&p.AccelX, &p.AccelY, &p.AccelZ, &p.SeiVersion); err != nil {
+			return nil, err
+		}
+		pts = append(pts, p)
+	}
+	return pts, rows.Err()
 }
 
 // EventThumbRelPath returns the thumb path for an event, or pgx.ErrNoRows when

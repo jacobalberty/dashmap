@@ -23,6 +23,7 @@ type Querier interface {
 	ClipMarkers(ctx context.Context, carID int64, from, to time.Time, max int) ([]query.ClipMarker, bool, error)
 	Track(ctx context.Context, carID int64, from, to time.Time) ([]query.TrackPoint, error)
 	ClipDetail(ctx context.Context, clipID int64) (*query.ClipDetail, error)
+	ClipTrack(ctx context.Context, clipID int64) ([]query.ClipTrackPoint, error)
 	SegmentRelPath(ctx context.Context, segmentID int64) (string, error)
 	ClipZip(ctx context.Context, clipID int64) (*query.ClipZipInfo, error)
 	EventThumbRelPath(ctx context.Context, eventID int64) (string, error)
@@ -208,6 +209,20 @@ func (s *Server) handleClipDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, detail, nil)
+}
+
+func (s *Server) handleClipTrack(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	pts, err := s.deps.Querier.ClipTrack(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, codeInternal, "database error")
+		return
+	}
+	writeJSON(w, http.StatusOK, pts, nil)
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {

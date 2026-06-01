@@ -1,27 +1,48 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, reactive, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBrowseStore } from '@/stores/browse'
-import { clipLocalDate, formatLocalTime, formatDateHeader } from '@/lib/datetime'
-import { Temporal } from 'temporal-polyfill'
+import { formatLocalTime } from '@/lib/datetime'
+import { groupClips, type EventEntry } from '@/lib/clipGroups'
 
 const store = useBrowseStore()
 const router = useRouter()
 
-// Group clips by local date.
-const grouped = computed(() => {
-  const groups = new Map<string, { label: string; clips: typeof store.clips }>()
-  for (const clip of store.clips) {
-    const d = clipLocalDate(clip.clip_ts, store.tz)
-    const key = d.toString()
-    if (!groups.has(key)) groups.set(key, { label: formatDateHeader(d), clips: [] })
-    groups.get(key)!.clips.push(clip)
-  }
-  // Return in newest-first order (map insertion order reflects API newest-first).
-  return Array.from(groups.values())
-})
+const grouped = computed(() => groupClips(store.clips, store.tz))
 
-// IntersectionObserver sentinel for infinite scroll.
+// Which events are expanded (by eventId). Vue reactive Set tracks add/delete.
+const expandedEvents = reactive(new Set<number>())
+
+function toggleEvent(eventId: number) {
+  if (expandedEvents.has(eventId)) expandedEvents.delete(eventId)
+  else expandedEvents.add(eventId)
+}
+
+// When a clip gets selected (e.g. by clicking its marker on the map), expand the
+// owning event so the highlighted row is visible.
+watch(
+  () => store.selectedClipId,
+  (id) => {
+    if (id == null) return
+    const clip = store.clips.find((c) => c.id === id)
+    if (clip?.event_id != null) expandedEvents.add(clip.event_id)
+  },
+)
+
+// Time label for a collapsed event: "10:08 – 10:16" (or a single time).
+function eventTimeRange(ev: EventEntry): string {
+  const start = formatLocalTime(ev.firstClip.clip_ts, store.tz)
+  const end = formatLocalTime(ev.latestClip.clip_ts, store.tz)
+  return start === end ? start : `${start} – ${end}`
+}
+
+// True if any of the event's clips is the current selection.
+function eventHasSelected(ev: EventEntry): boolean {
+  return store.selectedClipId != null && ev.clips.some((c) => c.id === store.selectedClipId)
+}
+
+// ── infinite scroll ───────────────────────────────────────────────────────────
+
 const sentinel = ref<HTMLElement | null>(null)
 let observer: IntersectionObserver | null = null
 
@@ -35,25 +56,28 @@ onMounted(() => {
   if (sentinel.value) observer.observe(sentinel.value)
 })
 
-onUnmounted(() => {
-  observer?.disconnect()
-})
+onUnmounted(() => observer?.disconnect())
 
-function onRowClick(id: number) {
-  store.selectClip(store.selectedClipId === id ? null : id)
-}
+// ── interactions ────────────────────────────────────────────────────────────
 
-function onRowDblClick(id: number) {
+function play(id: number) {
   store.selectClip(id)
   router.push(`/clip/${id}`)
 }
 
-function onRowKeydown(e: KeyboardEvent, id: number) {
-  if (e.key === 'Enter') {
-    router.push(`/clip/${id}`)
-  } else if (e.key === 'Escape') {
-    store.selectClip(null)
-  }
+function onClipClick(id: number) {
+  store.selectClip(store.selectedClipId === id ? null : id)
+}
+
+function onClipKeydown(e: KeyboardEvent, id: number) {
+  if (e.key === 'Enter') play(id)
+  else if (e.key === 'Escape') store.selectClip(null)
+}
+
+function onEventKeydown(e: KeyboardEvent, ev: EventEntry) {
+  if (e.key === 'Enter') play(ev.firstClip.id)
+  else if (e.key === 'ArrowRight' && !expandedEvents.has(ev.eventId)) toggleEvent(ev.eventId)
+  else if (e.key === 'ArrowLeft' && expandedEvents.has(ev.eventId)) toggleEvent(ev.eventId)
 }
 </script>
 
@@ -72,38 +96,94 @@ function onRowKeydown(e: KeyboardEvent, id: number) {
     </div>
 
     <template v-else>
-      <div v-for="group in grouped" :key="group.label">
+      <div v-for="group in grouped" :key="group.key">
         <div class="date-header">{{ group.label }}</div>
-        <div
-          v-for="clip in group.clips"
-          :key="clip.id"
-          :class="['clip-row', { selected: store.selectedClipId === clip.id }]"
-          tabindex="0"
-          @click="onRowClick(clip.id)"
-          @dblclick="onRowDblClick(clip.id)"
-          @keydown="onRowKeydown($event, clip.id)"
-        >
-          <div class="thumb-wrap">
-            <img v-if="clip.thumb_url" :src="clip.thumb_url" class="thumb" loading="lazy" />
-            <div v-else :class="['thumb-placeholder', `kind-bg-${clip.kind}`]">
-              {{ clip.kind[0].toUpperCase() }}
+
+        <template v-for="entry in group.entries">
+          <!-- ── Standalone clip ──────────────────────────────────────── -->
+          <div
+            v-if="entry.type === 'clip'"
+            :key="`c${entry.clip.id}`"
+            :class="['clip-row', { selected: store.selectedClipId === entry.clip.id }]"
+            tabindex="0"
+            @click="onClipClick(entry.clip.id)"
+            @dblclick="play(entry.clip.id)"
+            @keydown="onClipKeydown($event, entry.clip.id)"
+          >
+            <div class="thumb-wrap">
+              <img v-if="entry.clip.thumb_url" :src="entry.clip.thumb_url" class="thumb" loading="lazy" />
+              <div v-else :class="['thumb-placeholder', `kind-bg-${entry.clip.kind}`]">
+                {{ entry.clip.kind[0].toUpperCase() }}
+              </div>
             </div>
+            <div class="clip-info">
+              <div class="clip-top">
+                <span class="clip-time">{{ formatLocalTime(entry.clip.clip_ts, store.tz) }}</span>
+                <span :class="['kind-badge', `kind-${entry.clip.kind}`]">{{ entry.clip.kind }}</span>
+                <span v-if="!entry.clip.lat" class="no-gps">no GPS</span>
+              </div>
+              <div v-if="entry.clip.reason" class="clip-reason">{{ entry.clip.reason }}</div>
+              <div v-if="entry.clip.city" class="clip-city">{{ entry.clip.city }}</div>
+            </div>
+            <button class="play-btn" title="Play" @click.stop="play(entry.clip.id)">▶</button>
           </div>
 
-          <div class="clip-info">
-            <div class="clip-top">
-              <span class="clip-time">{{ formatLocalTime(clip.clip_ts, store.tz) }}</span>
-              <span :class="['kind-badge', `kind-${clip.kind}`]">{{ clip.kind }}</span>
-              <span v-if="!clip.lat" class="no-gps">no GPS</span>
-            </div>
-            <div v-if="clip.reason" class="clip-reason">{{ clip.reason }}</div>
-            <div v-if="clip.city" class="clip-city">{{ clip.city }}</div>
-          </div>
+          <!-- ── Event group ──────────────────────────────────────────── -->
+          <template v-else :key="`e${entry.eventId}`">
+            <div
+              :class="['clip-row', 'event-row', { selected: eventHasSelected(entry) }]"
+              tabindex="0"
+              @click="play(entry.firstClip.id)"
+              @keydown="onEventKeydown($event, entry)"
+            >
+              <button
+                v-if="entry.count > 1"
+                class="chevron"
+                :class="{ open: expandedEvents.has(entry.eventId) }"
+                :title="expandedEvents.has(entry.eventId) ? 'Collapse' : 'Expand clips'"
+                @click.stop="toggleEvent(entry.eventId)"
+              >›</button>
+              <span v-else class="chevron-spacer" />
 
-          <button class="play-btn" title="Play" @click.stop="router.push(`/clip/${clip.id}`)">
-            ▶
-          </button>
-        </div>
+              <div class="thumb-wrap">
+                <img v-if="entry.thumbUrl" :src="entry.thumbUrl" class="thumb" loading="lazy" />
+                <div v-else :class="['thumb-placeholder', `kind-bg-${entry.kind}`]">
+                  {{ entry.kind[0].toUpperCase() }}
+                </div>
+              </div>
+
+              <div class="clip-info">
+                <div class="clip-top">
+                  <span class="clip-time">{{ eventTimeRange(entry) }}</span>
+                  <span :class="['kind-badge', `kind-${entry.kind}`]">{{ entry.kind }}</span>
+                  <span v-if="entry.count > 1" class="clip-count">{{ entry.count }} clips</span>
+                  <span v-if="!entry.hasGps" class="no-gps">no GPS</span>
+                </div>
+                <div v-if="entry.reason" class="clip-reason">{{ entry.reason }}</div>
+              </div>
+
+              <button class="play-btn" title="Play event" @click.stop="play(entry.firstClip.id)">▶</button>
+            </div>
+
+            <!-- expanded minute-clips -->
+            <template v-if="expandedEvents.has(entry.eventId)">
+              <div
+                v-for="clip in entry.clips"
+                :key="`ec${clip.id}`"
+                :class="['clip-row', 'sub-row', { selected: store.selectedClipId === clip.id }]"
+                tabindex="0"
+                @click="onClipClick(clip.id)"
+                @dblclick="play(clip.id)"
+                @keydown="onClipKeydown($event, clip.id)"
+              >
+                <span class="sub-rail" />
+                <span class="clip-time sub-time">{{ formatLocalTime(clip.clip_ts, store.tz) }}</span>
+                <span v-if="!clip.lat" class="no-gps">no GPS</span>
+                <button class="play-btn" title="Play" @click.stop="play(clip.id)">▶</button>
+              </div>
+            </template>
+          </template>
+        </template>
       </div>
 
       <div ref="sentinel" class="sentinel" />
@@ -154,6 +234,22 @@ function onRowKeydown(e: KeyboardEvent, id: number) {
 .clip-row:hover { background: var(--bg-hover); }
 .clip-row.selected { background: var(--bg-selected); }
 .clip-row:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+
+.chevron {
+  flex-shrink: 0;
+  width: 16px;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.12s, color 0.1s;
+  line-height: 1;
+}
+.chevron.open { transform: rotate(90deg); }
+.chevron:hover { color: var(--text-1); }
+.chevron-spacer { width: 16px; flex-shrink: 0; }
 
 .thumb-wrap { flex-shrink: 0; }
 
@@ -212,6 +308,14 @@ function onRowKeydown(e: KeyboardEvent, id: number) {
 .kind-saved  { background: rgba(96,165,250,0.12); color: var(--kind-saved); }
 .kind-recent { background: rgba(148,163,184,0.08); color: var(--kind-recent); }
 
+.clip-count {
+  font-size: 10px;
+  color: var(--text-3);
+  background: var(--bg-surface);
+  border-radius: 3px;
+  padding: 0 5px;
+}
+
 .no-gps {
   font-size: 10px;
   color: var(--text-3);
@@ -232,6 +336,24 @@ function onRowKeydown(e: KeyboardEvent, id: number) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* expanded minute-clip rows */
+.sub-row {
+  padding: 3px 12px 3px 0;
+  gap: 6px;
+}
+.sub-rail {
+  width: 2px;
+  align-self: stretch;
+  margin-left: 33px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+.sub-time {
+  font-size: 11px;
+  color: var(--text-2);
+  font-weight: 400;
 }
 
 .play-btn {

@@ -16,6 +16,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/calendar", s.handleCalendar)
 	mux.HandleFunc("GET /api/clips", s.handleClips)
 	mux.HandleFunc("GET /api/clips/{id}", s.handleClipDetail)
+	mux.HandleFunc("GET /api/clips/{id}/track", s.handleClipTrack)
 	mux.HandleFunc("GET /api/clip-markers", s.handleClipMarkers)
 	mux.HandleFunc("GET /api/track", s.handleTrack)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
