@@ -6,6 +6,7 @@ import type {
   ClipMarker,
   TrackPoint,
   ClipDetail,
+  ClipTrackPoint,
   Status,
   ClipsMeta,
   MarkersMeta,
@@ -113,6 +114,10 @@ export function getTrack(params: {
 
 export function getClipDetail(id: number): Promise<ClipDetail> {
   return apiGet<ClipDetail>(`/api/clips/${id}`)
+}
+
+export function getClipTrack(id: number): Promise<ClipTrackPoint[]> {
+  return apiGet<ClipTrackPoint[]>(`/api/clips/${id}/track`)
 }
 
 export function getStatus(car?: string): Promise<Status> {

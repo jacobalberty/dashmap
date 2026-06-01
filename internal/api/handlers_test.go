@@ -19,22 +19,23 @@ import (
 
 // stubQuerier is a controllable Querier for handler tests.
 type stubQuerier struct {
-	carID     int64
-	carErr    error
-	cars      []query.Car
-	clips     []query.ClipListItem
-	clipsMore bool
-	markers   []query.ClipMarker
-	track     []query.TrackPoint
-	detail    *query.ClipDetail
-	detailErr error
-	segRel    string
-	segErr    error
-	thumbRel  string
-	thumbErr  error
-	zip       *query.ClipZipInfo
-	zipErr    error
-	status    *query.Status
+	carID      int64
+	carErr     error
+	cars       []query.Car
+	clips      []query.ClipListItem
+	clipsMore  bool
+	markers    []query.ClipMarker
+	track      []query.TrackPoint
+	detail     *query.ClipDetail
+	detailErr  error
+	clipTrack  []query.ClipTrackPoint
+	segRel     string
+	segErr     error
+	thumbRel   string
+	thumbErr   error
+	zip        *query.ClipZipInfo
+	zipErr     error
+	status     *query.Status
 }
 
 func (s *stubQuerier) CarIDByKey(context.Context, string) (int64, error) { return s.carID, s.carErr }
@@ -53,6 +54,12 @@ func (s *stubQuerier) Track(context.Context, int64, time.Time, time.Time) ([]que
 }
 func (s *stubQuerier) ClipDetail(context.Context, int64) (*query.ClipDetail, error) {
 	return s.detail, s.detailErr
+}
+func (s *stubQuerier) ClipTrack(context.Context, int64) ([]query.ClipTrackPoint, error) {
+	if s.clipTrack == nil {
+		return []query.ClipTrackPoint{}, nil
+	}
+	return s.clipTrack, nil
 }
 func (s *stubQuerier) SegmentRelPath(context.Context, int64) (string, error) {
 	return s.segRel, s.segErr
@@ -171,6 +178,85 @@ func TestHandleClipDetailNotFound(t *testing.T) {
 
 func TestHandleClipDetailBadID(t *testing.T) {
 	rec := do(testServer(t, &stubQuerier{}, nil), http.MethodGet, "/api/clips/abc")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestHandleClipDetailNeighbors(t *testing.T) {
+	prev, next := int64(41), int64(43)
+	q := &stubQuerier{detail: &query.ClipDetail{
+		ID: 42, Segments: []query.ClipSegment{},
+		PrevClipID: &prev, NextClipID: &next,
+	}}
+	rec := do(testServer(t, q, nil), http.MethodGet, "/api/clips/42")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var env struct {
+		Data struct {
+			PrevClipID *int64 `json:"prev_clip_id"`
+			NextClipID *int64 `json:"next_clip_id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if env.Data.PrevClipID == nil || *env.Data.PrevClipID != 41 {
+		t.Errorf("prev_clip_id = %v, want 41", env.Data.PrevClipID)
+	}
+	if env.Data.NextClipID == nil || *env.Data.NextClipID != 43 {
+		t.Errorf("next_clip_id = %v, want 43", env.Data.NextClipID)
+	}
+}
+
+func TestHandleClipTrackEmpty(t *testing.T) {
+	rec := do(testServer(t, &stubQuerier{}, nil), http.MethodGet, "/api/clips/7/track")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var env struct {
+		Data []any `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(env.Data) != 0 {
+		t.Errorf("len(data) = %d, want 0", len(env.Data))
+	}
+}
+
+func TestHandleClipTrackPoints(t *testing.T) {
+	gear := int16(1)
+	q := &stubQuerier{clipTrack: []query.ClipTrackPoint{
+		{TS: time.Date(2026, 5, 30, 12, 0, 0, 0, time.UTC), Lat: 37.77, Lon: -122.41, Gear: &gear},
+	}}
+	rec := do(testServer(t, q, nil), http.MethodGet, "/api/clips/7/track")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var env struct {
+		Data []struct {
+			Lat  float64 `json:"lat"`
+			Gear *int16  `json:"gear"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(env.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(env.Data))
+	}
+	if env.Data[0].Lat != 37.77 {
+		t.Errorf("lat = %v, want 37.77", env.Data[0].Lat)
+	}
+	if env.Data[0].Gear == nil || *env.Data[0].Gear != 1 {
+		t.Errorf("gear = %v, want 1", env.Data[0].Gear)
+	}
+}
+
+func TestHandleClipTrackBadID(t *testing.T) {
+	rec := do(testServer(t, &stubQuerier{}, nil), http.MethodGet, "/api/clips/bad/track")
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}

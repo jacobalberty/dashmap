@@ -31,6 +31,7 @@ export interface ClipListItem {
   reason: string | null
   city: string | null
   thumb_url: string | null
+  event_id: number | null
   cameras: string[]
 }
 
@@ -79,6 +80,27 @@ export interface ClipDetail {
   download_url: string
   event: ClipEvent | null
   segments: ClipSegment[]
+  prev_clip_id: number | null
+  next_clip_id: number | null
+}
+
+export interface ClipTrackPoint {
+  ts: string // RFC3339
+  lat: number
+  lon: number
+  speed_mps: number | null
+  heading_deg: number | null
+  gear: number | null        // 0=P 1=D 2=R 3=N
+  autopilot: number | null   // 0=none 1=FSD 2=Autosteer 3=TACC
+  blinker_left: boolean | null
+  blinker_right: boolean | null
+  brake_applied: boolean | null
+  accelerator_pedal_position: number | null
+  steering_wheel_angle: number | null
+  accel_x: number | null
+  accel_y: number | null
+  accel_z: number | null
+  sei_version: number | null
 }
 
 export interface TrackMeta {

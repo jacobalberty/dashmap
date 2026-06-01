@@ -1,33 +1,172 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getClipDetail } from '@/lib/api'
+import { getClipDetail, getClipTrack } from '@/lib/api'
 import { formatLocalDate, localTz } from '@/lib/datetime'
-import type { ClipDetail } from '@/types'
+import { backendTelemetry } from '@/lib/playback'
+import { usePlaybackSync } from '@/composables/usePlaybackSync'
+import CameraGrid from '@/components/CameraGrid.vue'
+import TransportBar from '@/components/TransportBar.vue'
+import SeiHud from '@/components/SeiHud.vue'
+import PlaybackMap from '@/components/PlaybackMap.vue'
+import type { ClipDetail, ClipTrackPoint } from '@/types'
+import type { TelemetrySource } from '@/lib/playback'
 
 const route = useRoute()
 const router = useRouter()
-const clip = ref<ClipDetail | null>(null)
-const loading = ref(true)
-const error = ref<string | null>(null)
-
 const tz = localTz()
 
-onMounted(async () => {
-  const id = Number(route.params.id)
-  if (!id) { error.value = 'Invalid clip ID'; loading.value = false; return }
+// ── state ─────────────────────────────────────────────────────────────────────
+
+const clip = ref<ClipDetail | null>(null)
+const trackPts = ref<ClipTrackPoint[]>([])
+const loading = ref(true)
+const loadError = ref<string | null>(null)
+let source: TelemetrySource | null = null
+
+const sync = usePlaybackSync()
+
+// ── prefs (localStorage) ──────────────────────────────────────────────────────
+
+interface Prefs {
+  autoplayNext: boolean
+  showHud: boolean
+  mapExpanded: boolean
+  rate: number
+  speedUnit: 'mph' | 'kmh'
+}
+
+function loadPrefs(): Prefs {
   try {
-    clip.value = await getClipDetail(id)
+    const raw = localStorage.getItem('dashmap-playback-prefs')
+    return raw
+      ? { autoplayNext: true, showHud: true, mapExpanded: true, rate: 1, speedUnit: 'mph', ...JSON.parse(raw) }
+      : { autoplayNext: true, showHud: true, mapExpanded: true, rate: 1, speedUnit: 'mph' }
+  } catch {
+    return { autoplayNext: true, showHud: true, mapExpanded: true, rate: 1, speedUnit: 'mph' }
+  }
+}
+
+const prefs = ref<Prefs>(loadPrefs())
+
+watch(prefs, (p) => {
+  try { localStorage.setItem('dashmap-playback-prefs', JSON.stringify(p)) } catch {}
+  sync.setRate(p.rate)
+}, { deep: true })
+
+// ── derived telemetry ─────────────────────────────────────────────────────────
+
+const telemetry = computed(() => source?.at(sync.currentTime.value) ?? null)
+const hasGps = computed(() => source?.hasGps ?? false)
+const hasSei = computed(() => clip.value?.has_sei ?? false)
+
+const currentLat = computed(() => telemetry.value?.lat ?? null)
+const currentLon = computed(() => telemetry.value?.lon ?? null)
+const currentHeading = computed(() => telemetry.value?.headingDeg ?? null)
+
+// ── load clip ─────────────────────────────────────────────────────────────────
+
+const cameraGridRef = ref<InstanceType<typeof CameraGrid> | null>(null)
+
+async function loadClip(id: number) {
+  loading.value = true
+  loadError.value = null
+  clip.value = null
+  trackPts.value = []
+  source = null
+  sync.reset()
+
+  try {
+    const [detail, pts] = await Promise.all([getClipDetail(id), getClipTrack(id)])
+    clip.value = detail
+    trackPts.value = pts
+    source = backendTelemetry(new Date(detail.clip_ts).getTime(), pts)
+    sync.setRate(prefs.value.rate)
   } catch (e) {
-    error.value = String(e)
+    loadError.value = String(e)
   } finally {
     loading.value = false
   }
+}
+
+onMounted(() => {
+  const id = Number(route.params.id)
+  if (id) loadClip(id)
+  else loadError.value = 'Invalid clip ID'
 })
+
+watch(
+  () => route.params.id,
+  (id) => {
+    const n = Number(id)
+    if (n) loadClip(n)
+  },
+)
+
+// ── autoplay next when ended ──────────────────────────────────────────────────
+
+watch(sync.playing, (nowPlaying, wasPlaying) => {
+  // Detect transition to stopped after playback was running.
+  if (!nowPlaying && wasPlaying && clip.value && prefs.value.autoplayNext) {
+    // The 'ended' event sets playing=false; check if we're actually at the end.
+    const atEnd = sync.duration.value > 0 &&
+      Math.abs(sync.currentTime.value - sync.duration.value) < 0.5
+    if (atEnd && clip.value.next_clip_id) {
+      router.push(`/clip/${clip.value.next_clip_id}`)
+    }
+  }
+})
+
+// ── keyboard shortcuts ────────────────────────────────────────────────────────
+
+function onKeyDown(e: KeyboardEvent) {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
+  if (e.target instanceof HTMLTextAreaElement) return
+
+  switch (e.key) {
+    case ' ':
+      e.preventDefault()
+      sync.toggle()
+      break
+    case 'ArrowLeft':
+      e.preventDefault()
+      sync.seekBy(-10)
+      break
+    case 'ArrowRight':
+      e.preventDefault()
+      sync.seekBy(10)
+      break
+    case 'm':
+    case 'M':
+      if (hasSei.value) prefs.value.showHud = !prefs.value.showHud
+      break
+    case 'n':
+    case 'N':
+      if (clip.value?.next_clip_id) router.push(`/clip/${clip.value.next_clip_id}`)
+      break
+    default:
+      if (/^[1-6]$/.test(e.key)) {
+        const idx = parseInt(e.key) - 1
+        if (clip.value && idx < clip.value.segments.length) {
+          cameraGridRef.value?.focusIndex(idx)
+        }
+      }
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKeyDown))
+onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
+
+// ── transport handlers ────────────────────────────────────────────────────────
+
+function onFullscreen() {
+  cameraGridRef.value?.fullscreenAll()
+}
 </script>
 
 <template>
   <div class="playback">
+    <!-- Header -->
     <div class="playback-header">
       <button class="back-btn" @click="router.push('/')">← back to map</button>
       <template v-if="clip">
@@ -35,29 +174,101 @@ onMounted(async () => {
         <span :class="['kind-badge', `kind-${clip.kind}`]">{{ clip.kind }}</span>
         <span v-if="clip.event?.reason" class="clip-reason">{{ clip.event.reason }}</span>
       </template>
+      <span class="spacer" />
+      <!-- prev / next navigation -->
+      <template v-if="clip">
+        <button
+          v-if="clip.prev_clip_id"
+          class="nav-btn"
+          @click="router.push(`/clip/${clip.prev_clip_id}`)"
+          title="Previous clip"
+        >← prev</button>
+        <button
+          v-if="clip.next_clip_id"
+          class="nav-btn"
+          @click="router.push(`/clip/${clip.next_clip_id}`)"
+          title="Next clip"
+        >next →</button>
+      </template>
     </div>
 
+    <!-- Loading / error -->
     <div v-if="loading" class="state-msg">Loading…</div>
-    <div v-else-if="error" class="state-msg error">{{ error }}</div>
+    <div v-else-if="loadError" class="state-msg error">{{ loadError }}</div>
+
+    <!-- Player -->
     <template v-else-if="clip">
-      <div class="segments-grid">
-        <div v-for="seg in clip.segments" :key="seg.segment_id" class="segment-card">
-          <div class="seg-label">{{ seg.camera }}</div>
-          <video
-            :src="seg.media_url"
-            controls
-            preload="metadata"
-            class="seg-video"
+      <div class="player-body">
+        <!-- Camera grid -->
+        <div class="video-area">
+          <CameraGrid
+            ref="cameraGridRef"
+            :segments="clip.segments"
+            :register-video="sync.registerVideo"
+            :get-video="sync.getVideo"
           />
-          <a :href="seg.download_url" class="seg-dl" download>⬇ download</a>
+          <!-- Floating map panel -->
+          <div v-if="hasGps && prefs.mapExpanded" class="map-pip">
+            <PlaybackMap
+              :track="trackPts"
+              :current-lat="currentLat"
+              :current-lon="currentLon"
+              :current-heading="currentHeading"
+            />
+            <button class="map-close" @click="prefs.mapExpanded = false" title="Hide map">✕</button>
+          </div>
+          <button
+            v-if="hasGps && !prefs.mapExpanded"
+            class="map-show-btn"
+            @click="prefs.mapExpanded = true"
+            title="Show map"
+          >🗺</button>
+        </div>
+
+        <!-- Transport -->
+        <TransportBar
+          :playing="sync.playing.value"
+          :current-time="sync.currentTime.value"
+          :duration="sync.duration.value"
+          :rate="sync.rate.value"
+          :download-url="clip.download_url"
+          @toggle="sync.toggle()"
+          @seek="sync.seek($event)"
+          @seek-by="sync.seekBy($event)"
+          @set-rate="(r) => { sync.setRate(r); prefs.rate = r }"
+          @fullscreen="onFullscreen"
+        />
+
+        <!-- SEI HUD -->
+        <SeiHud
+          v-if="hasSei && prefs.showHud"
+          :telemetry="telemetry"
+          :speed-unit="prefs.speedUnit"
+        />
+
+        <!-- Footer options -->
+        <div class="options-bar">
+          <label class="opt-label" v-if="hasSei">
+            <input type="checkbox" v-model="prefs.showHud" />
+            show metadata
+          </label>
+          <label class="opt-label">
+            <input type="checkbox" v-model="prefs.autoplayNext" />
+            autoplay next clip
+          </label>
+          <label v-if="hasSei" class="opt-label unit-toggle">
+            speed:
+            <button
+              :class="['unit-btn', { active: prefs.speedUnit === 'mph' }]"
+              @click="prefs.speedUnit = 'mph'"
+            >mph</button>
+            <button
+              :class="['unit-btn', { active: prefs.speedUnit === 'kmh' }]"
+              @click="prefs.speedUnit = 'kmh'"
+            >km/h</button>
+          </label>
         </div>
       </div>
-
-      <div class="clip-actions">
-        <a :href="clip.download_url" class="dl-btn" download>⬇ Download all cameras (zip)</a>
-      </div>
-
-      <p class="story-note">Full multi-camera playback with SEI overlay is coming in Story 06.</p>
     </template>
   </div>
 </template>
@@ -65,31 +276,37 @@ onMounted(async () => {
 <style scoped>
 .playback {
   height: 100%;
-  overflow-y: auto;
-  background: var(--bg-app);
-  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app, #0e0f11);
+  overflow: hidden;
 }
 
 .playback-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--bg-surface, #1a1c23);
+  border-bottom: 1px solid var(--border, #2a2c35);
+  flex-shrink: 0;
 }
 
-.back-btn {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  color: var(--text-2);
-  border-radius: var(--radius);
-  padding: 5px 10px;
+.spacer { flex: 1; }
+
+.back-btn, .nav-btn {
+  background: var(--bg-surface, #1a1c23);
+  border: 1px solid var(--border, #2a2c35);
+  color: var(--text-2, #9199a6);
+  border-radius: var(--radius, 4px);
+  padding: 4px 10px;
   font-size: 12px;
   cursor: pointer;
 }
-.back-btn:hover { color: var(--text-1); background: var(--bg-hover); }
+.back-btn:hover, .nav-btn:hover { color: var(--text-1, #e2e4ea); background: var(--bg-hover, rgba(255,255,255,0.06)); }
 
-.clip-date { font-size: 14px; font-weight: 500; }
-.clip-reason { font-size: 12px; color: var(--text-2); }
+.clip-date { font-size: 14px; font-weight: 500; color: var(--text-1, #e2e4ea); }
+.clip-reason { font-size: 12px; color: var(--text-2, #9199a6); }
 
 .kind-badge {
   display: inline-block;
@@ -100,70 +317,115 @@ onMounted(async () => {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-.kind-sentry { background: rgba(245,158,11,0.15); color: var(--kind-sentry); }
-.kind-saved { background: rgba(96,165,250,0.15); color: var(--kind-saved); }
-.kind-recent { background: rgba(148,163,184,0.1); color: var(--kind-recent); }
+.kind-sentry { background: rgba(245,158,11,0.15); color: var(--kind-sentry, #f59e0b); }
+.kind-saved  { background: rgba(96,165,250,0.15); color: var(--kind-saved, #60a5fa); }
+.kind-recent { background: rgba(148,163,184,0.1); color: var(--kind-recent, #94a3b8); }
 
-.segments-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
-  margin-bottom: 16px;
+.player-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.segment-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+.video-area {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* Floating map PiP */
+.map-pip {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  width: 220px;
+  height: 160px;
+  border-radius: 6px;
   overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.15);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  z-index: 10;
 }
 
-.seg-label {
-  font-size: 11px;
-  color: var(--text-2);
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--border);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.map-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(19,20,26,0.85);
+  border: none;
+  color: var(--text-2, #9199a6);
+  border-radius: 3px;
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 11;
 }
+.map-close:hover { color: var(--text-1, #e2e4ea); }
 
-.seg-video {
-  width: 100%;
-  display: block;
-  background: #000;
+.map-show-btn {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  background: rgba(19,20,26,0.85);
+  border: 1px solid var(--border, #2a2c35);
+  color: var(--text-2, #9199a6);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 14px;
+  cursor: pointer;
+  z-index: 10;
 }
+.map-show-btn:hover { color: var(--text-1, #e2e4ea); }
 
-.seg-dl {
-  display: block;
-  padding: 6px 10px;
-  font-size: 11px;
-  color: var(--text-3);
-  text-decoration: none;
-  border-top: 1px solid var(--border);
-}
-.seg-dl:hover { color: var(--accent); }
-
-.clip-actions { margin-bottom: 16px; }
-
-.dl-btn {
-  display: inline-block;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  color: var(--text-2);
-  border-radius: var(--radius);
+.options-bar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
   padding: 6px 14px;
+  background: var(--bg-surface, #1a1c23);
+  border-top: 1px solid var(--border, #2a2c35);
+  flex-shrink: 0;
+}
+
+.opt-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
-  text-decoration: none;
+  color: var(--text-2, #9199a6);
+  cursor: pointer;
+  user-select: none;
+}
+
+.unit-toggle { gap: 4px; }
+
+.unit-btn {
+  background: none;
+  border: 1px solid var(--border, #2a2c35);
+  color: var(--text-3, #565d6a);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 11px;
   cursor: pointer;
 }
-.dl-btn:hover { color: var(--accent); border-color: var(--accent); }
-
-.state-msg { color: var(--text-2); padding: 40px 0; text-align: center; }
-.state-msg.error { color: #f87171; }
-
-.story-note {
-  font-size: 11px;
-  color: var(--text-3);
-  font-style: italic;
+.unit-btn.active {
+  background: rgba(79,142,247,0.12);
+  color: var(--accent, #4f8ef7);
+  border-color: var(--accent, #4f8ef7);
 }
+
+.state-msg {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2, #9199a6);
+  font-size: 14px;
+}
+.state-msg.error { color: #f87171; }
 </style>
