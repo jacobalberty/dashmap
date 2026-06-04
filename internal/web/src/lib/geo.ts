@@ -127,5 +127,21 @@ export function computeBounds(
   ]
 }
 
+// Project a point by distM metres along bearingDeg (clockwise from north).
+// Uses equirectangular approximation — accurate for short distances (<few km).
+export function offsetLatLon(
+  lat: number,
+  lon: number,
+  distM: number,
+  bearingDeg: number,
+): [number, number] {
+  const b = (bearingDeg * Math.PI) / 180
+  const north = Math.cos(b)
+  const east = Math.sin(b)
+  const dLat = (north * distM) / 111320
+  const dLon = (east * distM) / (111320 * Math.cos((lat * Math.PI) / 180))
+  return [lat + dLat, lon + dLon]
+}
+
 // Quantile density bucketing for the calendar heatmap (pure, unit-tested).
 export { densityThresholds, densityLevel } from '@/lib/datetime'

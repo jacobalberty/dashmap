@@ -11,6 +11,8 @@ const props = defineProps<{
   currentLat: number | null
   currentLon: number | null
   currentHeading: number | null
+  headStub: [number, number][] | null
+  tailStub: [number, number][] | null
 }>()
 
 const emit = defineEmits<{
@@ -24,9 +26,10 @@ let map: maplibregl.Map | null = null
 const TRACK_SRC = 'pb-track'
 const HIT_LAYER = 'pb-hit'
 const DOT_SRC = 'pb-dot'
-// Grabbable/tappable layers. The hit line's width is also the proximity
-// threshold — only interactions within ~1 em of the path register.
-const GRAB_LAYERS = ['pb-dot', HIT_LAYER]
+const STUB_SRC = 'pb-stub'
+const STUB_HIT_LAYER = 'pb-stub-hit'
+// Grabbable/tappable layers. The hit line width is also the proximity threshold.
+const GRAB_LAYERS = ['pb-dot', HIT_LAYER, STUB_HIT_LAYER]
 
 function trackAsRuns() {
   return [props.track.map((p) => ({ ts: p.ts, lat: p.lat, lon: p.lon, clip_id: 0 }))]
@@ -34,6 +37,20 @@ function trackAsRuns() {
 
 function emptyFC(): GeoJSON.FeatureCollection {
   return { type: 'FeatureCollection', features: [] }
+}
+
+function stubFC(): GeoJSON.FeatureCollection {
+  const features: GeoJSON.Feature[] = []
+  for (const seg of [props.headStub, props.tailStub]) {
+    if (seg && seg.length >= 2) {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: seg },
+        properties: {},
+      })
+    }
+  }
+  return { type: 'FeatureCollection', features }
 }
 
 function dotFC(lat: number, lon: number): GeoJSON.FeatureCollection {
@@ -76,6 +93,24 @@ onMounted(async () => {
 
   map.on('load', () => {
     if (!map) return
+
+    // Stub source: dashed/faded estimated segments at the head and tail of the
+    // clip, rendered below the solid track so the real path wins at junctions.
+    map.addSource(STUB_SRC, { type: 'geojson', data: stubFC() })
+    map.addLayer({
+      id: 'pb-stub-line',
+      type: 'line',
+      source: STUB_SRC,
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': '#4f8ef7', 'line-width': 2, 'line-opacity': 0.4, 'line-dasharray': [3, 3] },
+    })
+    map.addLayer({
+      id: STUB_HIT_LAYER,
+      type: 'line',
+      source: STUB_SRC,
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': '#000', 'line-width': 32, 'line-opacity': 0 },
+    })
 
     map.addSource(TRACK_SRC, { type: 'geojson', data: trackFC() })
     map.addLayer({
@@ -173,6 +208,15 @@ watch(
   ([lat, lon]) => {
     if (!map?.loaded() || lat === null || lon === null) return
     ;(map.getSource(DOT_SRC) as maplibregl.GeoJSONSource)?.setData(dotFC(lat, lon))
+  },
+)
+
+// Update stub geometry when stubs arrive (after video duration loads).
+watch(
+  () => [props.headStub, props.tailStub] as const,
+  () => {
+    if (!map?.loaded()) return
+    ;(map.getSource(STUB_SRC) as maplibregl.GeoJSONSource)?.setData(stubFC())
   },
 )
 </script>

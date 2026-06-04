@@ -16,7 +16,6 @@ const noticeText = ref<string | null>(null)
 
 let map: maplibregl.Map | null = null
 let spiderOpen = false
-let spiderLeaves: ClipMarker[] = []
 let popup: maplibregl.Popup | null = null
 
 const TRACK_SRC = 'track'
@@ -340,7 +339,6 @@ function openSpider(center: [number, number], leaves: ClipMarker[]) {
   if (!map) return
   clearSpider()
   spiderOpen = true
-  spiderLeaves = leaves
 
   const zoom = map.getZoom()
   const spiderFC = spiderGeoJSON(center, leaves, zoom)
@@ -364,7 +362,6 @@ function openSpider(center: [number, number], leaves: ClipMarker[]) {
 function clearSpider() {
   if (!spiderOpen) return
   spiderOpen = false
-  spiderLeaves = []
   ;(map?.getSource(SPIDER_SRC) as maplibregl.GeoJSONSource)?.setData(emptyFC())
   ;(map?.getSource(SPIDER_LEGS_SRC) as maplibregl.GeoJSONSource)?.setData(emptyFC())
 }

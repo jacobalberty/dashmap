@@ -16,7 +16,7 @@ func (s *Server) handleBasemap(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, codeNotFound, "basemap not found")
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	fi, err := f.Stat()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, codeInternal, "basemap unavailable")

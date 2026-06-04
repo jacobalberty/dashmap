@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   backendTelemetry,
+  extendTrack,
   formatGear,
   formatAutopilot,
   formatSpeedMph,
@@ -225,5 +226,88 @@ describe('shouldResync', () => {
   it('uses default threshold of 0.1', () => {
     expect(shouldResync(0, 0.09)).toBe(false)
     expect(shouldResync(0, 0.11)).toBe(true)
+  })
+})
+
+describe('extendTrack', () => {
+  it('returns empty for empty raw', () => {
+    const r = extendTrack([], BASE_TS, 60)
+    expect(r.points).toHaveLength(0)
+    expect(r.headStub).toBeNull()
+    expect(r.tailStub).toBeNull()
+  })
+
+  it('returns no stubs when durationSec<=0', () => {
+    const r = extendTrack([pt(5)], BASE_TS, 0)
+    expect(r.points).toHaveLength(1)
+    expect(r.headStub).toBeNull()
+    expect(r.tailStub).toBeNull()
+  })
+
+  it('returns no stubs when edges are already covered', () => {
+    // first fix at t=0, last at t=10 → no gap
+    const r = extendTrack([pt(0), pt(10)], BASE_TS, 10)
+    expect(r.points).toHaveLength(2)
+    expect(r.headStub).toBeNull()
+    expect(r.tailStub).toBeNull()
+  })
+
+  it('adds head + tail stubs for a moving car with gaps', () => {
+    // first fix at t=5 (gap=5s head), last at t=25 (gap=5s tail), duration=30
+    const raw = [
+      pt(5,  { lat: 37.0, lon: -122.0, speed_mps: 20, heading_deg: 0 }),
+      pt(25, { lat: 37.1, lon: -122.0, speed_mps: 20, heading_deg: 0 }),
+    ]
+    const r = extendTrack(raw, BASE_TS, 30)
+    // synthetic head at t=0, synthetic tail at t=30
+    expect(r.points[0].ts).toBe(new Date(BASE_TS).toISOString())
+    expect(r.points[r.points.length - 1].ts).toBe(new Date(BASE_TS + 30000).toISOString())
+    // stubs should be non-null and have 2 coordinate pairs
+    expect(r.headStub).not.toBeNull()
+    expect(r.tailStub).not.toBeNull()
+    expect(r.headStub).toHaveLength(2)
+    expect(r.tailStub).toHaveLength(2)
+    // heading 0° = north; backward = south → head lat < first lat
+    expect(r.points[0].lat).toBeLessThan(37.0)
+    // forward = north → tail lat > last lat
+    expect(r.points[r.points.length - 1].lat).toBeGreaterThan(37.1)
+  })
+
+  it('caps stub distance at STUB_CAP_S * speed', () => {
+    // 10s gap at 20 m/s → uncapped = 200m, capped = 2s * 20 = 40m
+    const raw = [pt(10, { lat: 37.0, lon: -122.0, speed_mps: 20, heading_deg: 0 })]
+    const r = extendTrack(raw, BASE_TS, 60)
+    const headLat = r.points[0].lat
+    // 40m south (heading+180=south) ≈ 40/111320 degrees ≈ 0.000359°
+    const expectedDist = 40 / 111320
+    expect(Math.abs(37.0 - headLat)).toBeCloseTo(expectedDist, 4)
+  })
+
+  it('holds position when speed is zero', () => {
+    const raw = [pt(5, { lat: 37.0, lon: -122.0, speed_mps: 0, heading_deg: 90 })]
+    const r = extendTrack(raw, BASE_TS, 30)
+    // Synthetic head and tail exist in points (for timeline coverage) but no stub geometry
+    expect(r.points[0].lat).toBeCloseTo(37.0, 6)
+    expect(r.points[0].lon).toBeCloseTo(-122.0, 6)
+    expect(r.headStub).toBeNull()
+    expect(r.tailStub).toBeNull()
+  })
+
+  it('holds position when heading is null', () => {
+    const raw = [pt(5, { lat: 37.0, lon: -122.0, speed_mps: 20, heading_deg: null as unknown as number })]
+    const r = extendTrack(raw, BASE_TS, 30)
+    expect(r.points[0].lat).toBeCloseTo(37.0, 6)
+    expect(r.headStub).toBeNull()
+  })
+
+  it('integration: at(0) and at(duration) return non-null after extending', () => {
+    const raw = [
+      pt(5,  { lat: 37.0, lon: -122.0, speed_mps: 10, heading_deg: 0 }),
+      pt(25, { lat: 37.1, lon: -122.0, speed_mps: 10, heading_deg: 0 }),
+    ]
+    const { points } = extendTrack(raw, BASE_TS, 30)
+    const src = backendTelemetry(BASE_TS, points)
+    expect(src.at(0)).not.toBeNull()
+    expect(src.at(30)).not.toBeNull()
   })
 })

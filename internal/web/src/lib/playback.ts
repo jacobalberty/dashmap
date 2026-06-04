@@ -1,4 +1,5 @@
 import type { ClipTrackPoint } from '@/types'
+import { offsetLatLon } from '@/lib/geo'
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -207,6 +208,77 @@ export function backendTelemetry(
   }
 
   return { at, timeAt, hasGps }
+}
+
+// ── extendTrack ───────────────────────────────────────────────────────────────
+
+// Max seconds of travel to project for a head/tail stub.
+const STUB_CAP_S = 2
+// Below this speed (m/s) we hold position instead of projecting.
+const STUB_MIN_SPEED = 0.5
+// Treat gap as "edge already covered" if smaller than this (s).
+const STUB_EPS = 0.01
+
+export interface ExtendedTrack {
+  points: ClipTrackPoint[]
+  // [lon,lat] pairs for dashed stub line geometry, or null if no stub needed.
+  headStub: [number, number][] | null
+  tailStub: [number, number][] | null
+}
+
+// Prepend/append synthetic edge points so backendTelemetry covers the full clip
+// span [0, durationSec], not just the GPS-valid span. Head and tail stubs
+// dead-reckon from heading+speed at the edge fix, capped to STUB_CAP_S seconds
+// of travel. When the car is stationary or durationSec is not yet known the
+// synthetic point holds the edge fix's position (no visual stub geometry).
+export function extendTrack(
+  raw: ClipTrackPoint[],
+  clipTsMs: number,
+  durationSec: number,
+): ExtendedTrack {
+  if (raw.length === 0) return { points: [], headStub: null, tailStub: null }
+  if (durationSec <= 0) return { points: raw, headStub: null, tailStub: null }
+
+  const points: ClipTrackPoint[] = [...raw]
+  let headStub: [number, number][] | null = null
+  let tailStub: [number, number][] | null = null
+
+  const first = raw[0]
+  const last = raw[raw.length - 1]
+  const firstTSec = (new Date(first.ts).getTime() - clipTsMs) / 1000
+  const lastTSec = (new Date(last.ts).getTime() - clipTsMs) / 1000
+
+  // Head stub: synthesize a point at t=0 projecting backward from the first fix.
+  if (firstTSec > STUB_EPS) {
+    const ts0 = new Date(clipTsMs).toISOString()
+    const speed = first.speed_mps ?? 0
+    const heading = first.heading_deg
+    if (speed >= STUB_MIN_SPEED && heading != null) {
+      const distM = speed * Math.min(firstTSec, STUB_CAP_S)
+      const [newLat, newLon] = offsetLatLon(first.lat, first.lon, distM, heading + 180)
+      points.unshift({ ...first, ts: ts0, lat: newLat, lon: newLon })
+      headStub = [[newLon, newLat], [first.lon, first.lat]]
+    } else {
+      points.unshift({ ...first, ts: ts0 })
+    }
+  }
+
+  // Tail stub: synthesize a point at t=duration projecting forward from the last fix.
+  if (lastTSec < durationSec - STUB_EPS) {
+    const tsEnd = new Date(clipTsMs + durationSec * 1000).toISOString()
+    const speed = last.speed_mps ?? 0
+    const heading = last.heading_deg
+    if (speed >= STUB_MIN_SPEED && heading != null) {
+      const distM = speed * Math.min(durationSec - lastTSec, STUB_CAP_S)
+      const [newLat, newLon] = offsetLatLon(last.lat, last.lon, distM, heading)
+      points.push({ ...last, ts: tsEnd, lat: newLat, lon: newLon })
+      tailStub = [[last.lon, last.lat], [newLon, newLat]]
+    } else {
+      points.push({ ...last, ts: tsEnd })
+    }
+  }
+
+  return { points, headStub, tailStub }
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
