@@ -162,6 +162,18 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
 function onFullscreen() {
   cameraGridRef.value?.fullscreenAll()
 }
+
+// ── map seek (drag dot/path = scrub, tap = jump) ──────────────────────────────
+
+function onMapScrub(ll: { lng: number; lat: number }) {
+  const t = source?.timeAt(ll.lng, ll.lat)
+  if (t != null) sync.scrub(t)
+}
+
+function onMapSeek(ll: { lng: number; lat: number }) {
+  const t = source?.timeAt(ll.lng, ll.lat)
+  if (t != null) sync.seek(t)
+}
 </script>
 
 <template>
@@ -214,6 +226,8 @@ function onFullscreen() {
               :current-lat="currentLat"
               :current-lon="currentLon"
               :current-heading="currentHeading"
+              @scrub="onMapScrub"
+              @seek="onMapSeek"
             />
             <button class="map-close" @click="prefs.mapExpanded = false" title="Hide map">✕</button>
           </div>
@@ -233,6 +247,7 @@ function onFullscreen() {
           :rate="sync.rate.value"
           :download-url="clip.download_url"
           @toggle="sync.toggle()"
+          @scrub="sync.scrub($event)"
           @seek="sync.seek($event)"
           @seek-by="sync.seekBy($event)"
           @set-rate="(r) => { sync.setRate(r); prefs.rate = r }"

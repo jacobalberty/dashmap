@@ -13,10 +13,20 @@ const props = defineProps<{
   currentHeading: number | null
 }>()
 
+const emit = defineEmits<{
+  // Geographic point under the pointer; the parent maps it to a track time.
+  scrub: [lngLat: { lng: number; lat: number }]
+  seek: [lngLat: { lng: number; lat: number }]
+}>()
+
 const container = ref<HTMLDivElement>()
 let map: maplibregl.Map | null = null
 const TRACK_SRC = 'pb-track'
+const HIT_LAYER = 'pb-hit'
 const DOT_SRC = 'pb-dot'
+// Grabbable/tappable layers. The hit line's width is also the proximity
+// threshold — only interactions within ~1 em of the path register.
+const GRAB_LAYERS = ['pb-dot', HIT_LAYER]
 
 function trackAsRuns() {
   return [props.track.map((p) => ({ ts: p.ts, lat: p.lat, lon: p.lon, clip_id: 0 }))]
@@ -76,6 +86,16 @@ onMounted(async () => {
       paint: { 'line-color': '#4f8ef7', 'line-width': 2.5, 'line-opacity': 0.7 },
     })
 
+    // Invisible wide hit area for easy tapping/grabbing of the thin path.
+    // ~32px ≈ ±1em proximity threshold for registering taps/drags.
+    map.addLayer({
+      id: HIT_LAYER,
+      type: 'line',
+      source: TRACK_SRC,
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': '#000', 'line-width': 32, 'line-opacity': 0 },
+    })
+
     map.addSource(DOT_SRC, { type: 'geojson', data: emptyFC() })
     map.addLayer({
       id: 'pb-dot',
@@ -92,6 +112,53 @@ onMounted(async () => {
     // Fit to the track
     const bounds = computeBounds(trackAsRuns(), [])
     if (bounds) map.fitBounds(bounds, { padding: 30, maxZoom: 16, duration: 0 })
+
+    // ── seek interactions: drag the dot/path to scrub, tap to jump ────────────
+    const canvas = map.getCanvas()
+    let dragging = false
+
+    function lngLatOf(e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) {
+      return { lng: e.lngLat.lng, lat: e.lngLat.lat }
+    }
+    function onDragMove(e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) {
+      emit('scrub', lngLatOf(e))
+    }
+    function onMouseUp(e: maplibregl.MapMouseEvent) {
+      dragging = false
+      canvas.style.cursor = ''
+      map?.off('mousemove', onDragMove)
+      emit('seek', lngLatOf(e))
+    }
+    function onTouchEnd(e: maplibregl.MapTouchEvent) {
+      dragging = false
+      map?.off('touchmove', onDragMove)
+      emit('seek', lngLatOf(e))
+    }
+    function startMouseDrag(e: maplibregl.MapMouseEvent) {
+      e.preventDefault() // suppress map pan while scrubbing
+      dragging = true
+      canvas.style.cursor = 'grabbing'
+      map?.on('mousemove', onDragMove)
+      map?.once('mouseup', onMouseUp)
+    }
+    function startTouchDrag(e: maplibregl.MapTouchEvent) {
+      if (e.points.length !== 1) return // let pinch-zoom through
+      e.preventDefault()
+      dragging = true
+      map?.on('touchmove', onDragMove)
+      map?.once('touchend', onTouchEnd)
+    }
+
+    for (const layer of GRAB_LAYERS) {
+      map.on('mousedown', layer, startMouseDrag)
+      map.on('touchstart', layer, startTouchDrag)
+      map.on('mouseenter', layer, () => {
+        if (!dragging) canvas.style.cursor = 'grab'
+      })
+      map.on('mouseleave', layer, () => {
+        if (!dragging) canvas.style.cursor = ''
+      })
+    }
   })
 })
 

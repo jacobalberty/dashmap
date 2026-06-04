@@ -37,6 +37,14 @@ export function usePlaybackSync() {
   let rvfcHandle = -1
   let rafHandle = -1
 
+  // Scrub session: while the user drags the seek bar / map dot, the sync loop is
+  // frozen and the videos are paused so live previewing is smooth; on commit
+  // (seek) playback resumes if it was running.
+  const scrubbing = ref(false)
+  let scrubWasPlaying = false
+  let scrubRaf = -1
+  let scrubTarget = 0
+
   function master(): HTMLVideoElement | null {
     return videos[0] ?? null
   }
@@ -120,9 +128,59 @@ export function usePlaybackSync() {
     else play()
   }
 
-  function seek(t: number) {
-    const clamped = Math.max(0, Math.min(t, duration.value || 0))
+  function clampTime(t: number): number {
+    return Math.max(0, Math.min(t, duration.value || 0))
+  }
+
+  function flushScrub() {
+    scrubRaf = -1
+    for (const v of videos) {
+      if (v) v.currentTime = scrubTarget
+    }
+  }
+
+  // Continuous live preview while dragging. Begins a scrub session on the first
+  // call: freezes the sync loop and pauses media (remembering play intent) so the
+  // dot/HUD/videos all track the drag without the loop fighting currentTime.
+  function scrub(t: number) {
+    const clamped = clampTime(t)
+    if (!scrubbing.value) {
+      scrubbing.value = true
+      scrubWasPlaying = playing.value
+      stopLoop()
+      for (const v of videos) v?.pause()
+    }
     currentTime.value = clamped
+    scrubTarget = clamped
+    if (scrubRaf < 0) scrubRaf = requestAnimationFrame(flushScrub)
+  }
+
+  function endScrub() {
+    if (scrubRaf >= 0) {
+      cancelAnimationFrame(scrubRaf)
+      scrubRaf = -1
+    }
+    scrubbing.value = false
+    const t = currentTime.value
+    for (const v of videos) {
+      if (v) v.currentTime = t
+    }
+    if (scrubWasPlaying) {
+      for (const v of videos) v?.play().catch(() => {})
+      startLoop()
+    }
+    scrubWasPlaying = false
+  }
+
+  function seek(t: number) {
+    const clamped = clampTime(t)
+    currentTime.value = clamped
+    if (scrubbing.value) {
+      // Commit an in-progress scrub session (resumes playback if it was playing).
+      scrubTarget = clamped
+      endScrub()
+      return
+    }
     for (const v of videos) {
       if (v) v.currentTime = clamped
     }
@@ -152,6 +210,9 @@ export function usePlaybackSync() {
         stopLoop()
       })
       el.addEventListener('seeked', () => {
+        // During a scrub session we drive currentTime + slaves directly; ignore
+        // the per-frame seek events so they don't fight the scrub target.
+        if (scrubbing.value) return
         currentTime.value = el.currentTime
         syncSlaves(el.currentTime)
       })
@@ -169,6 +230,12 @@ export function usePlaybackSync() {
 
   function reset() {
     pause()
+    if (scrubRaf >= 0) {
+      cancelAnimationFrame(scrubRaf)
+      scrubRaf = -1
+    }
+    scrubbing.value = false
+    scrubWasPlaying = false
     videos.length = 0
     currentTime.value = 0
     duration.value = 0
@@ -190,6 +257,7 @@ export function usePlaybackSync() {
     pause,
     toggle,
     seek,
+    scrub,
     seekBy,
     setRate,
   }

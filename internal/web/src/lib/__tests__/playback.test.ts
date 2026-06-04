@@ -141,6 +141,37 @@ describe('backendTelemetry — nullable fields', () => {
   })
 })
 
+describe('backendTelemetry — timeAt (inverse)', () => {
+  const pts = [pt(0, { lat: 37.0, lon: -122.0 }), pt(10, { lat: 37.1, lon: -122.0 })]
+  const src = backendTelemetry(BASE_TS, pts)
+
+  it('projects a midpoint to the mid time', () => {
+    expect(src.timeAt(-122.0, 37.05)).toBeCloseTo(5, 1)
+  })
+
+  it('projects an off-path point to the nearest point time', () => {
+    // east of the line at the midpoint latitude → still projects to mid time
+    expect(src.timeAt(-121.999, 37.05)).toBeCloseTo(5, 1)
+  })
+
+  it('clamps before the first point', () => {
+    expect(src.timeAt(-122.0, 36.9)).toBeCloseTo(0, 5)
+  })
+
+  it('clamps after the last point', () => {
+    expect(src.timeAt(-122.0, 37.2)).toBeCloseTo(10, 5)
+  })
+
+  it('returns the single point time regardless of query', () => {
+    const one = backendTelemetry(BASE_TS, [pt(7, { lat: 37.0, lon: -122.0 })])
+    expect(one.timeAt(-100, 10)).toBe(7)
+  })
+
+  it('returns null for an empty track', () => {
+    expect(backendTelemetry(BASE_TS, []).timeAt(-122, 37)).toBeNull()
+  })
+})
+
 describe('formatGear', () => {
   it('maps 0→P 1→D 2→R 3→N', () => {
     expect(formatGear(0)).toBe('P')

@@ -24,6 +24,9 @@ export interface Telemetry {
 // Any implementation of this interface can be swapped in without changing views.
 export interface TelemetrySource {
   at(tSec: number): Telemetry | null
+  // Inverse of at(): given a geographic point, return the time of the closest
+  // point on the track (clamped to the GPS-covered span), or null if no track.
+  timeAt(lng: number, lat: number): number | null
   readonly hasGps: boolean
 }
 
@@ -165,7 +168,45 @@ export function backendTelemetry(
     return interpolate(lo, hi, t)
   }
 
-  return { at, hasGps }
+  // Project (lng,lat) onto the track polyline and return the time of the closest
+  // point. Distances use a cos(lat)-scaled lon (equirectangular) — accurate
+  // enough for a ~1-minute clip's small footprint.
+  function timeAt(lng: number, lat: number): number | null {
+    if (pts.length === 0) return null
+    if (pts.length === 1) return pts[0].tSec
+
+    const kx = Math.cos((lat * Math.PI) / 180) // lon → x scale at this latitude
+    const px = lng * kx
+    const py = lat
+
+    let bestD2 = Infinity
+    let bestT = pts[0].tSec
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i]
+      const b = pts[i + 1]
+      const ax = a.lon * kx
+      const ay = a.lat
+      const bx = b.lon * kx
+      const by = b.lat
+      const dx = bx - ax
+      const dy = by - ay
+      const len2 = dx * dx + dy * dy
+      let u = len2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0
+      u = Math.max(0, Math.min(1, u))
+      const cx = ax + u * dx
+      const cy = ay + u * dy
+      const ddx = px - cx
+      const ddy = py - cy
+      const d2 = ddx * ddx + ddy * ddy
+      if (d2 < bestD2) {
+        bestD2 = d2
+        bestT = lerpNum(a.tSec, b.tSec, u)
+      }
+    }
+    return bestT
+  }
+
+  return { at, timeAt, hasGps }
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
