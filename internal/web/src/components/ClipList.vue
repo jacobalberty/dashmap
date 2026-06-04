@@ -129,8 +129,9 @@ function onEventKeydown(e: KeyboardEvent, ev: EventEntry) {
           </div>
 
           <!-- ── Event group ──────────────────────────────────────────── -->
-          <template v-else :key="`e${entry.eventId}`">
+          <template v-else>
             <div
+              :key="`e${entry.eventId}`"
               :class="['clip-row', 'event-row', { selected: eventHasSelected(entry) }]"
               tabindex="0"
               @click="play(entry.firstClip.id)"

@@ -73,38 +73,6 @@ func updateCarHW(ctx context.Context, pool *pgxpool.Pool, carID int64, hwGen str
 	return err
 }
 
-// upsertEvent upserts an event row and returns its id.
-func upsertEvent(ctx context.Context, tx pgx.Tx, carID int64, folderRelPath string, ev *parsedEvent, folderTS time.Time, thumbRelPath *string) (int64, error) {
-	var id int64
-	err := tx.QueryRow(ctx, `
-		INSERT INTO events (car_id, event_ts, folder_ts, kind, city, est_lat, est_lon, reason, camera, folder_rel_path, thumb_rel_path, raw)
-		VALUES ($1, $2, $3, $4, NULLIF($5,''), $6, $7, NULLIF($8,''), NULLIF($9,''), $10, $11, $12::jsonb)
-		ON CONFLICT (folder_rel_path) DO UPDATE
-		  SET event_ts       = EXCLUDED.event_ts,
-		      city           = EXCLUDED.city,
-		      est_lat        = EXCLUDED.est_lat,
-		      est_lon        = EXCLUDED.est_lon,
-		      reason         = EXCLUDED.reason,
-		      camera         = EXCLUDED.camera,
-		      thumb_rel_path = EXCLUDED.thumb_rel_path,
-		      raw            = EXCLUDED.raw
-		RETURNING id`,
-		carID,
-		ev.EventTS,
-		folderTS,
-		string(KindSaved), // kind overridden by caller when inserting sentry
-		ev.City,
-		ev.EstLat,
-		ev.EstLon,
-		ev.Reason,
-		ev.Camera,
-		folderRelPath,
-		thumbRelPath,
-		string(ev.Raw),
-	).Scan(&id)
-	return id, err
-}
-
 // upsertEventWithKind is like upsertEvent but accepts an explicit kind.
 func upsertEventWithKind(ctx context.Context, tx pgx.Tx, carID int64, kind ClipKind, folderRelPath string, ev *parsedEvent, folderTS time.Time, thumbRelPath *string) (int64, error) {
 	var id int64

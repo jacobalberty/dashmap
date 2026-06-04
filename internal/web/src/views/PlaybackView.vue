@@ -3,14 +3,13 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getClipDetail, getClipTrack } from '@/lib/api'
 import { formatLocalDate, localTz } from '@/lib/datetime'
-import { backendTelemetry } from '@/lib/playback'
+import { backendTelemetry, extendTrack } from '@/lib/playback'
 import { usePlaybackSync } from '@/composables/usePlaybackSync'
 import CameraGrid from '@/components/CameraGrid.vue'
 import TransportBar from '@/components/TransportBar.vue'
 import SeiHud from '@/components/SeiHud.vue'
 import PlaybackMap from '@/components/PlaybackMap.vue'
 import type { ClipDetail, ClipTrackPoint } from '@/types'
-import type { TelemetrySource } from '@/lib/playback'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,7 +21,6 @@ const clip = ref<ClipDetail | null>(null)
 const trackPts = ref<ClipTrackPoint[]>([])
 const loading = ref(true)
 const loadError = ref<string | null>(null)
-let source: TelemetrySource | null = null
 
 const sync = usePlaybackSync()
 
@@ -50,14 +48,21 @@ function loadPrefs(): Prefs {
 const prefs = ref<Prefs>(loadPrefs())
 
 watch(prefs, (p) => {
-  try { localStorage.setItem('dashmap-playback-prefs', JSON.stringify(p)) } catch {}
+  try { localStorage.setItem('dashmap-playback-prefs', JSON.stringify(p)) } catch { /* ignore storage errors */ }
   sync.setRate(p.rate)
 }, { deep: true })
 
 // ── derived telemetry ─────────────────────────────────────────────────────────
 
-const telemetry = computed(() => source?.at(sync.currentTime.value) ?? null)
-const hasGps = computed(() => source?.hasGps ?? false)
+// clipTsMs/durationSec/extended/source are reactive so they recompute when
+// sync.duration arrives from loadedmetadata, filling in the stubs retroactively.
+const clipTsMs = computed(() => (clip.value ? new Date(clip.value.clip_ts).getTime() : 0))
+const durationSec = computed(() => sync.duration.value || (clip.value?.duration_s ?? 0))
+const extended = computed(() => extendTrack(trackPts.value, clipTsMs.value, durationSec.value))
+const source = computed(() => backendTelemetry(clipTsMs.value, extended.value.points))
+
+const telemetry = computed(() => source.value.at(sync.currentTime.value))
+const hasGps = computed(() => source.value.hasGps)
 const hasSei = computed(() => clip.value?.has_sei ?? false)
 
 const currentLat = computed(() => telemetry.value?.lat ?? null)
@@ -73,14 +78,12 @@ async function loadClip(id: number) {
   loadError.value = null
   clip.value = null
   trackPts.value = []
-  source = null
   sync.reset()
 
   try {
     const [detail, pts] = await Promise.all([getClipDetail(id), getClipTrack(id)])
     clip.value = detail
     trackPts.value = pts
-    source = backendTelemetry(new Date(detail.clip_ts).getTime(), pts)
     sync.setRate(prefs.value.rate)
   } catch (e) {
     loadError.value = String(e)
@@ -166,12 +169,12 @@ function onFullscreen() {
 // ── map seek (drag dot/path = scrub, tap = jump) ──────────────────────────────
 
 function onMapScrub(ll: { lng: number; lat: number }) {
-  const t = source?.timeAt(ll.lng, ll.lat)
+  const t = source.value.timeAt(ll.lng, ll.lat)
   if (t != null) sync.scrub(t)
 }
 
 function onMapSeek(ll: { lng: number; lat: number }) {
-  const t = source?.timeAt(ll.lng, ll.lat)
+  const t = source.value.timeAt(ll.lng, ll.lat)
   if (t != null) sync.seek(t)
 }
 </script>
@@ -222,7 +225,10 @@ function onMapSeek(ll: { lng: number; lat: number }) {
           <!-- Floating map panel -->
           <div v-if="hasGps && prefs.mapExpanded" class="map-pip">
             <PlaybackMap
+              :key="clip?.id"
               :track="trackPts"
+              :head-stub="extended.headStub"
+              :tail-stub="extended.tailStub"
               :current-lat="currentLat"
               :current-lon="currentLon"
               :current-heading="currentHeading"
