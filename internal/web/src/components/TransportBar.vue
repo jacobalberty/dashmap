@@ -12,6 +12,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   toggle: []
+  scrub: [t: number]
   seek: [t: number]
   seekBy: [delta: number]
   setRate: [r: number]
@@ -31,7 +32,9 @@ watch(
 
 function onSeekInput(e: Event) {
   isDragging.value = true
-  seekValue.value = Number((e.target as HTMLInputElement).value)
+  const v = Number((e.target as HTMLInputElement).value)
+  seekValue.value = v
+  emit('scrub', v)
 }
 
 function onSeekChange(e: Event) {
