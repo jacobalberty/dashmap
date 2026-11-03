@@ -52,7 +52,7 @@ services:
 
   test-runner:
     profiles: ["test"]
-    image: golang:1.26-bookworm
+    image: golang:1.27-trixie
     working_dir: /workspace
     volumes:
       - .:/workspace

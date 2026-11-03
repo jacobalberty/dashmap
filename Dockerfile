@@ -9,7 +9,7 @@ COPY internal/web/ ./
 RUN npm run build
 
 # Stage 2: cross-compile the Go binary with the embedded SPA
-FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS backend
+FROM --platform=$BUILDPLATFORM golang:1.27-trixie AS backend
 WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download

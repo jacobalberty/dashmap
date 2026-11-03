@@ -95,7 +95,6 @@ func runScan(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, carID 
 
 	// Process event folders (SavedClips + SentryClips)
 	for _, ef := range events {
-		ef := ef
 		g.Go(func() error {
 			tp, cams, proc, err2 := processEventFolder(gctx, cfg, pool, carID, ef)
 			if err2 != nil {
@@ -128,7 +127,6 @@ func runScan(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, carID 
 				allCameras[c] = true
 			}
 			for _, cl := range groupClips(segs) {
-				cl := cl
 				g.Go(func() error {
 					tp, proc, err3 := processClip(gctx, cfg, pool, carID, KindRecent, nil, cl)
 					if err3 != nil {

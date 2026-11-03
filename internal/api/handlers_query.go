@@ -106,7 +106,7 @@ func (s *Server) handleClips(w http.ResponseWriter, r *http.Request) {
 
 	var kinds []string
 	if k := q.Get("kind"); k != "" {
-		for _, part := range strings.Split(k, ",") {
+		for part := range strings.SplitSeq(k, ",") {
 			part = strings.TrimSpace(part)
 			if part == "" {
 				continue
