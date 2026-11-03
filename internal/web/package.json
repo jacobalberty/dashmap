@@ -22,7 +22,7 @@
     "pmtiles": "^4.0.0",
     "temporal-polyfill": "^0.2.0",
     "vue": "^3.5.13",
-    "vue-router": "^4.0.0"
+    "vue-router": "^5.4.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
