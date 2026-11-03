@@ -33,7 +33,7 @@ func upsertCar(ctx context.Context, pool *pgxpool.Pool, key, displayName, hwGen 
 	return id, err
 }
 
-// markScanStarted records the start of an ingest scan for a car (Story 04 status).
+// markScanStarted records the start of an ingest scan for a car.
 func markScanStarted(ctx context.Context, pool *pgxpool.Pool, carID int64) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO ingest_state (car_id, last_scan_started_at, updated_at)

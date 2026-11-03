@@ -21,11 +21,21 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: dashmap <serve|worker|migrate>")
+		fmt.Fprintln(os.Stderr, "usage: dashmap <serve|worker|migrate|healthcheck|version>")
 		os.Exit(1)
 	}
 
 	cmd := os.Args[1]
+
+	// These need no configuration.
+	switch cmd {
+	case "version", "-v", "--version":
+		fmt.Println("dashmap", version)
+		return
+	case "healthcheck":
+		runHealthcheck()
+		return
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -34,6 +44,7 @@ func main() {
 	}
 
 	setupLogger(cfg)
+	slog.Info("starting", "cmd", cmd, "version", version)
 
 	switch cmd {
 	case "serve":
@@ -43,7 +54,7 @@ func main() {
 	case "migrate":
 		runMigrate(cfg)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q; use serve, worker, or migrate\n", cmd)
+		fmt.Fprintf(os.Stderr, "unknown command %q; use serve, worker, migrate, healthcheck, or version\n", cmd)
 		os.Exit(1)
 	}
 }

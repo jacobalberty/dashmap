@@ -95,7 +95,6 @@ func runScan(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, carID 
 
 	// Process event folders (SavedClips + SentryClips)
 	for _, ef := range events {
-		ef := ef
 		g.Go(func() error {
 			tp, cams, proc, err2 := processEventFolder(gctx, cfg, pool, carID, ef)
 			if err2 != nil {
@@ -128,7 +127,6 @@ func runScan(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, carID 
 				allCameras[c] = true
 			}
 			for _, cl := range groupClips(segs) {
-				cl := cl
 				g.Go(func() error {
 					tp, proc, err3 := processClip(gctx, cfg, pool, carID, KindRecent, nil, cl)
 					if err3 != nil {
@@ -183,6 +181,7 @@ func processEventFolder(ctx context.Context, cfg *config.Config, pool *pgxpool.P
 	// Read event.json if present.
 	var ev *parsedEvent
 	evPath := filepath.Join(ef.absPath, "event.json")
+	//nolint:gosec // G304: path is inside the operator-configured VIDEO_ROOT
 	if data, err2 := os.ReadFile(evPath); err2 == nil {
 		ev, err = parseEventJSON(data)
 		if err != nil {
@@ -403,8 +402,8 @@ func downsample(samples []*pb.SeiMetadata, clipTS time.Time, fps, rateHz float64
 			lon:                 lon,
 			speedMPS:            m.GetVehicleSpeedMps(),
 			headingDeg:          m.GetHeadingDeg(),
-			gear:                int16(m.GetGearState().Number()),
-			autopilot:           int16(m.GetAutopilotState().Number()),
+			gear:                int16(m.GetGearState().Number()),      //nolint:gosec // G115: small protobuf enum/version value
+			autopilot:           int16(m.GetAutopilotState().Number()), //nolint:gosec // G115: small protobuf enum/version value
 			blinkerLeft:         m.GetBlinkerOnLeft(),
 			blinkerRight:        m.GetBlinkerOnRight(),
 			brakeApplied:        m.GetBrakeApplied(),
@@ -413,7 +412,7 @@ func downsample(samples []*pb.SeiMetadata, clipTS time.Time, fps, rateHz float64
 			accelX:              m.GetLinearAccelerationMps2X(),
 			accelY:              m.GetLinearAccelerationMps2Y(),
 			accelZ:              m.GetLinearAccelerationMps2Z(),
-			seiVersion:          int32(m.GetVersion()),
+			seiVersion:          int32(m.GetVersion()), //nolint:gosec // G115: small protobuf enum/version value
 		})
 	}
 	return rows

@@ -22,10 +22,10 @@ type Config struct {
 	SEISampleRate     float64
 	IngestConcurrency int
 
-	// Story 05
+	// Basemap
 	BasemapPMTiles string // absolute path to a .pmtiles file; empty = disabled
 
-	// API (Story 04)
+	// API
 	ZipCompression    string        // "store" | "deflate"
 	TrackGap          time.Duration // gap that starts a new track run
 	TrackSimplifyM    float64       // Douglas–Peucker tolerance, metres

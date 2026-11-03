@@ -4,16 +4,66 @@ Browse locally-stored Tesla dashcam footage on a **map + calendar**: pick a date
 see where the car was, click a point, play back the multi-camera clip with optional Tesla
 metadata overlay, and download clips.
 
-This project is built across the planning prompts in [`stories/`](stories/). Start with
-[`stories/README.md`](stories/README.md), then work `01` → `07` in order.
-
 Stack: Go backend (single **distroless** binary embedding the Vue SPA) · Vue 3 + Vite +
 MapLibre GL · PostgreSQL · no-transcode raw streaming. Built with **buildx**, shipped via
 **GitHub Actions**.
 
+## Quick start (published image)
+
+Release images are published to GHCR for `linux/amd64` and `linux/arm64`, signed with cosign:
+
+```sh
+docker pull ghcr.io/jacobalberty/dashmap:latest   # or pin X.Y.Z
+```
+
+dashmap needs PostgreSQL and a read-only mount of your TeslaCam footage. Run the web app
+(`serve`) and the ingest worker (`worker`) from the same image:
+
+```yaml
+services:
+  app:
+    image: ghcr.io/jacobalberty/dashmap:latest
+    ports: ["8080:8080"]
+    environment:
+      DATABASE_URL: postgres://dashmap:CHANGE_ME@postgres:5432/dashmap?sslmode=disable
+      VIDEO_ROOT: /footage
+    volumes: ["/path/to/TeslaCam:/footage:ro"]
+  worker:
+    image: ghcr.io/jacobalberty/dashmap:latest
+    command: ["worker"]
+    environment:
+      DATABASE_URL: postgres://dashmap:CHANGE_ME@postgres:5432/dashmap?sslmode=disable
+      VIDEO_ROOT: /footage
+    volumes: ["/path/to/TeslaCam:/footage:ro"]
+```
+
+Migrations run automatically on `serve` (`AUTO_MIGRATE=true`). The image runs as a non-root
+user, has no shell, and its `HEALTHCHECK` runs `/dashmap healthcheck`. There is **no built-in
+authentication**: run it behind a reverse proxy or auth layer and don't expose it publicly.
+
+## Configuration
+
+All settings are environment variables. See [`.env.example`](.env.example).
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | – (required) | PostgreSQL connection string |
+| `VIDEO_ROOT` | – (required) | TeslaCam directory; mount read-only |
+| `HTTP_ADDR` | `:8080` | Listen address |
+| `AUTO_MIGRATE` | `true` | Apply DB migrations on `serve` |
+| `SCAN_INTERVAL` | `5m` | How often the worker rescans `VIDEO_ROOT` |
+| `INGEST_CONCURRENCY` | CPU count | Parallel ingest workers |
+| `SEI_SAMPLE_RATE` | `1.0` | Fraction of SEI telemetry samples kept |
+| `DEFAULT_FPS` | `36` | Assumed frame rate for telemetry timing |
+| `CAR_KEY` / `CAR_DISPLAY_NAME` | `default` / – | Identify the vehicle |
+| `BASEMAP_PMTILES` | – | Path to a `.pmtiles` basemap (see below) |
+| `ZIP_COMPRESSION` | `store` | `store` or `deflate` for clip downloads |
+| `TRACK_GAP` / `TRACK_SIMPLIFY_M` | `2m` / `5` | Track run gap and simplification (metres) |
+| `LOG_LEVEL` / `LOG_FORMAT` | `info` / `json` | `debug\|info\|warn\|error` · `json\|text` |
+
 ## Development
 
-**Prerequisites:** Go 1.26+, Node 24+, Docker, [buf](https://buf.build/docs/installation)
+**Prerequisites:** Go 1.27+, Node 24+, Docker, [buf](https://buf.build/docs/installation)
 
 ```sh
 # Copy and fill in .env
@@ -46,7 +96,7 @@ docker compose up
 # app → http://localhost:8080
 ```
 
-## Basemap Setup (Story 05+)
+## Basemap Setup
 
 The map uses self-hosted Protomaps **PMTiles** for privacy (no external tile servers). It's
 optional — without it, the map still shows the GPS track and clip markers on a blank dark
@@ -97,3 +147,16 @@ at the resulting file.
 make test                # unit tests (no DB required)
 make test-integration    # requires DATABASE_URL set
 ```
+
+## Releases & security
+
+- **Cut a release:** push a `vX.Y.Z` tag, or run the *Release* workflow manually (leave the
+  version empty to compute the next semver from conventional commits). It creates the GitHub
+  release with a changelog, then builds and pushes a multi-arch (`amd64`/`arm64`) image to
+  `ghcr.io/jacobalberty/dashmap` (`X.Y.Z`, `X.Y`, `X`, `latest`), Trivy-scans it and signs it
+  with cosign.
+- **Gates before any image is published:** `go vet`, race + integration tests, `go fix`,
+  golangci-lint (incl. gosec), govulncheck, web typecheck/lint/test/build, `npm audit`,
+  buf lint/diff, and a full-history gitleaks secret scan. CodeQL and Dependabot run separately.
+- **Health:** the distroless image has no shell, so the container `HEALTHCHECK` runs
+  `/dashmap healthcheck` (probes `/livez`). `/dashmap version` prints the build version.

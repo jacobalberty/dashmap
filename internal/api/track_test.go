@@ -51,7 +51,7 @@ func TestDouglasPeuckerKeepsCorner(t *testing.T) {
 func TestBuildTrackRunsStrideCap(t *testing.T) {
 	// A zig-zag run that DP can't simplify below the cap, forcing a stride.
 	var pts []query.TrackPoint
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		lon := 0.0
 		if i%2 == 1 {
 			lon = 0.001

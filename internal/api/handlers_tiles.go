@@ -11,7 +11,7 @@ func (s *Server) handleBasemap(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, codeNotFound, "basemap not configured")
 		return
 	}
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: path comes from operator config (BASEMAP_PMTILES)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, codeNotFound, "basemap not found")
 		return
