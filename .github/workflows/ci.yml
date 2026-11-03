@@ -2,11 +2,25 @@ name: CI
 
 on:
   push:
+    branches: [ "main" ]
   pull_request:
+  # Reused by docker-publish.yml so images are only built from green code.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GOLANGCI_LINT_VERSION: v2.15.0
+  GOVULNCHECK_VERSION: v1.9.0
 
 jobs:
-  go:
-    name: Go
+  test:
+    name: vet, race and integration tests
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -23,27 +37,62 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-
+          check-latest: true
       - name: go vet
-        run: go vet $(go list ./cmd/... ./internal/... | grep -v node_modules)
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: latest
-
-      - name: unit tests
-        run: go test $(go list ./cmd/... ./internal/... | grep -v node_modules)
-
-      - name: integration tests
+        run: go vet ./cmd/... ./internal/...
+      - name: go test -race (unit + integration)
         env:
           DATABASE_URL: postgres://dashmap:dashmap@localhost:5432/dashmap?sslmode=disable
-        run: go test -tags integration $(go list ./cmd/... ./internal/... | grep -v node_modules)
+        run: go test -race -shuffle=on -count=1 -tags integration ./cmd/... ./internal/...
+
+  gofix:
+    name: go fix is clean
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Run go fix
+        run: go fix ./cmd/... ./internal/...
+      - name: Fail if go fix changed anything
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::'go fix' produced changes. Run it locally and commit the result."
+            git --no-pager diff
+            exit 1
+          fi
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # Scan with the newest Go release (what the Dockerfile ships), not the go.mod minimum.
+          go-version: stable
+          check-latest: true
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }} ./cmd/... ./internal/...
 
   web:
     name: Web
@@ -52,53 +101,61 @@ jobs:
       run:
         working-directory: internal/web
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: internal/web/package-lock.json
-
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test
       - run: npm run build
+      - name: npm audit (production deps)
+        run: npm audit --omit=dev --audit-level=high
 
   proto:
     name: Proto
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: bufbuild/buf-setup-action@v1
         with:
           github_token: ${{ github.token }}
-
-      - name: buf lint
-        run: buf lint
-
+      - run: buf lint
       - name: buf generate (no-diff check)
         run: |
           buf generate
           if ! git diff --exit-code; then
-            echo "Generated proto code is out of sync. Run 'make proto-gen' and commit."
+            echo "::error::Generated proto code is out of sync. Run 'make proto-gen' and commit."
             exit 1
           fi
 
-  docker:
-    name: Docker build
+  secrets:
+    name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0 # scan full history, not just the tip
+      - name: gitleaks
+        env:
+          GITLEAKS_VERSION: "8.28.0"
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz gitleaks
+          ./gitleaks detect --source . --redact --verbose --exit-code 1
 
+  docker:
+    name: Docker build (no push)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: docker/setup-buildx-action@v3
-
-      - name: Build image (no push)
-        uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64
           push: false
           tags: dashmap:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

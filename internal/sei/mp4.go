@@ -36,7 +36,7 @@ func findBox(r io.ReadSeeker, start, end int64, name [4]byte) (box, error) {
 			if _, err := io.ReadFull(r, ext[:]); err != nil {
 				return box{}, err
 			}
-			boxSize = int64(binary.BigEndian.Uint64(ext[:]))
+			boxSize = int64(binary.BigEndian.Uint64(ext[:])) //nolint:gosec // G115: negative result rejected by size check below
 			headerSize = 16
 		case 0: // box extends to EOF
 			boxSize = end - pos

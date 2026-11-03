@@ -113,7 +113,7 @@ func findMdat(r io.ReadSeeker) (offset, size int64, err error) {
 			if _, err := io.ReadFull(r, ext[:]); err != nil {
 				return 0, 0, fmt.Errorf("truncated extended atom size")
 			}
-			atomSize = int64(binary.BigEndian.Uint64(ext[:]))
+			atomSize = int64(binary.BigEndian.Uint64(ext[:])) //nolint:gosec // G115: file-size bounds checked by caller
 			headerSize = 16
 		case 0:
 			atomSize = 0 // extends to EOF

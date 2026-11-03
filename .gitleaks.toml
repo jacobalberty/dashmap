@@ -1,0 +1,9 @@
+title = "dashmap gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Local-dev defaults only (docker compose / CI throwaway Postgres)"
+regexes = ['''postgres://dashmap:dashmap@''']
+paths = ['''package-lock\.json$''']

@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@protomaps/basemaps": "^5.0.0",
-    "maplibre-gl": "^5.0.0",
+    "maplibre-gl": "^6.16.0",
     "pinia": "^3.0.0",
     "pmtiles": "^4.0.0",
     "temporal-polyfill": "^0.2.0",

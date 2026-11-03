@@ -97,3 +97,16 @@ at the resulting file.
 make test                # unit tests (no DB required)
 make test-integration    # requires DATABASE_URL set
 ```
+
+## Releases & security
+
+- **Cut a release:** push a `vX.Y.Z` tag, or run the *Release* workflow manually (leave the
+  version empty to compute the next semver from conventional commits). It creates the GitHub
+  release with a changelog, then builds and pushes a multi-arch (`amd64`/`arm64`) image to
+  `ghcr.io/jacobalberty/dashmap` (`X.Y.Z`, `X.Y`, `X`, `latest`), Trivy-scans it and signs it
+  with cosign.
+- **Gates before any image is published:** `go vet`, race + integration tests, `go fix`,
+  golangci-lint (incl. gosec), govulncheck, web typecheck/lint/test/build, `npm audit`,
+  buf lint/diff, and a full-history gitleaks secret scan. CodeQL and Dependabot run separately.
+- **Health:** the distroless image has no shell, so the container `HEALTHCHECK` runs
+  `/dashmap healthcheck` (probes `/livez`). `/dashmap version` prints the build version.

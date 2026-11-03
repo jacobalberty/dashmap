@@ -7,7 +7,11 @@ linters:
     - staticcheck
     - ineffassign
     - unused
+    - gosec
   exclusions:
+    rules:
+      - path: _test\.go
+        linters: [gosec, errcheck]
     paths:
       - internal/web/node_modules
 issues:
