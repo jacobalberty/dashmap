@@ -183,6 +183,7 @@ func processEventFolder(ctx context.Context, cfg *config.Config, pool *pgxpool.P
 	// Read event.json if present.
 	var ev *parsedEvent
 	evPath := filepath.Join(ef.absPath, "event.json")
+	//nolint:gosec // G304: path is inside the operator-configured VIDEO_ROOT
 	if data, err2 := os.ReadFile(evPath); err2 == nil {
 		ev, err = parseEventJSON(data)
 		if err != nil {
@@ -403,8 +404,8 @@ func downsample(samples []*pb.SeiMetadata, clipTS time.Time, fps, rateHz float64
 			lon:                 lon,
 			speedMPS:            m.GetVehicleSpeedMps(),
 			headingDeg:          m.GetHeadingDeg(),
-			gear:                int16(m.GetGearState().Number()),
-			autopilot:           int16(m.GetAutopilotState().Number()),
+			gear:                int16(m.GetGearState().Number()),      //nolint:gosec // G115: small protobuf enum/version value
+			autopilot:           int16(m.GetAutopilotState().Number()), //nolint:gosec // G115: small protobuf enum/version value
 			blinkerLeft:         m.GetBlinkerOnLeft(),
 			blinkerRight:        m.GetBlinkerOnRight(),
 			brakeApplied:        m.GetBrakeApplied(),
@@ -413,7 +414,7 @@ func downsample(samples []*pb.SeiMetadata, clipTS time.Time, fps, rateHz float64
 			accelX:              m.GetLinearAccelerationMps2X(),
 			accelY:              m.GetLinearAccelerationMps2Y(),
 			accelZ:              m.GetLinearAccelerationMps2Z(),
-			seiVersion:          int32(m.GetVersion()),
+			seiVersion:          int32(m.GetVersion()), //nolint:gosec // G115: small protobuf enum/version value
 		})
 	}
 	return rows
