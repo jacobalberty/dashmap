@@ -8,6 +8,59 @@ Stack: Go backend (single **distroless** binary embedding the Vue SPA) · Vue 3 
 MapLibre GL · PostgreSQL · no-transcode raw streaming. Built with **buildx**, shipped via
 **GitHub Actions**.
 
+## Quick start (published image)
+
+Release images are published to GHCR for `linux/amd64` and `linux/arm64`, signed with cosign:
+
+```sh
+docker pull ghcr.io/jacobalberty/dashmap:latest   # or pin X.Y.Z
+```
+
+dashmap needs PostgreSQL and a read-only mount of your TeslaCam footage. Run the web app
+(`serve`) and the ingest worker (`worker`) from the same image:
+
+```yaml
+services:
+  app:
+    image: ghcr.io/jacobalberty/dashmap:latest
+    ports: ["8080:8080"]
+    environment:
+      DATABASE_URL: postgres://dashmap:CHANGE_ME@postgres:5432/dashmap?sslmode=disable
+      VIDEO_ROOT: /footage
+    volumes: ["/path/to/TeslaCam:/footage:ro"]
+  worker:
+    image: ghcr.io/jacobalberty/dashmap:latest
+    command: ["worker"]
+    environment:
+      DATABASE_URL: postgres://dashmap:CHANGE_ME@postgres:5432/dashmap?sslmode=disable
+      VIDEO_ROOT: /footage
+    volumes: ["/path/to/TeslaCam:/footage:ro"]
+```
+
+Migrations run automatically on `serve` (`AUTO_MIGRATE=true`). The image runs as a non-root
+user, has no shell, and its `HEALTHCHECK` runs `/dashmap healthcheck`. There is **no built-in
+authentication**: run it behind a reverse proxy or auth layer and don't expose it publicly.
+
+## Configuration
+
+All settings are environment variables. See [`.env.example`](.env.example).
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | – (required) | PostgreSQL connection string |
+| `VIDEO_ROOT` | – (required) | TeslaCam directory; mount read-only |
+| `HTTP_ADDR` | `:8080` | Listen address |
+| `AUTO_MIGRATE` | `true` | Apply DB migrations on `serve` |
+| `SCAN_INTERVAL` | `5m` | How often the worker rescans `VIDEO_ROOT` |
+| `INGEST_CONCURRENCY` | CPU count | Parallel ingest workers |
+| `SEI_SAMPLE_RATE` | `1.0` | Fraction of SEI telemetry samples kept |
+| `DEFAULT_FPS` | `36` | Assumed frame rate for telemetry timing |
+| `CAR_KEY` / `CAR_DISPLAY_NAME` | `default` / – | Identify the vehicle |
+| `BASEMAP_PMTILES` | – | Path to a `.pmtiles` basemap (see below) |
+| `ZIP_COMPRESSION` | `store` | `store` or `deflate` for clip downloads |
+| `TRACK_GAP` / `TRACK_SIMPLIFY_M` | `2m` / `5` | Track run gap and simplification (metres) |
+| `LOG_LEVEL` / `LOG_FORMAT` | `info` / `json` | `debug\|info\|warn\|error` · `json\|text` |
+
 ## Development
 
 **Prerequisites:** Go 1.27+, Node 24+, Docker, [buf](https://buf.build/docs/installation)
