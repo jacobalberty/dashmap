@@ -1,10 +1,10 @@
 name: CI
 
 on:
-  push:
-    branches: [ "main" ]
+  # Pushes to main, the nightly schedule and releases run this suite via
+  # docker-publish.yml (workflow_call), so there is deliberately no push trigger
+  # here: it would run everything twice.
   pull_request:
-  # Reused by docker-publish.yml so images are only built from green code.
   workflow_call:
 
 permissions:
