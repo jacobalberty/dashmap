@@ -4,9 +4,6 @@ Browse locally-stored Tesla dashcam footage on a **map + calendar**: pick a date
 see where the car was, click a point, play back the multi-camera clip with optional Tesla
 metadata overlay, and download clips.
 
-This project is built across the planning prompts in [`stories/`](stories/). Start with
-[`stories/README.md`](stories/README.md), then work `01` → `07` in order.
-
 Stack: Go backend (single **distroless** binary embedding the Vue SPA) · Vue 3 + Vite +
 MapLibre GL · PostgreSQL · no-transcode raw streaming. Built with **buildx**, shipped via
 **GitHub Actions**.
@@ -46,7 +43,7 @@ docker compose up
 # app → http://localhost:8080
 ```
 
-## Basemap Setup (Story 05+)
+## Basemap Setup
 
 The map uses self-hosted Protomaps **PMTiles** for privacy (no external tile servers). It's
 optional — without it, the map still shows the GPS track and clip markers on a blank dark

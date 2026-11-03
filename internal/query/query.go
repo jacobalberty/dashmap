@@ -1,4 +1,4 @@
-// Package query is the read-side data layer for the HTTP API (Story 04). It is
+// Package query is the read-side data layer for the HTTP API. It is
 // the counterpart to internal/ingest's write-side store: typed methods returning
 // DTOs, raw pgx, no ORM.
 package query

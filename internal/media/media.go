@@ -1,5 +1,5 @@
 // Package media serves dashcam video segments and thumbnails via HTTP range
-// requests, confined to a single video root (Story 04).
+// requests, confined to a single video root.
 package media
 
 import (

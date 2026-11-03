@@ -11,7 +11,7 @@ import (
 
 // CameraPriority is the canonical display/order precedence for Tesla dashcam
 // cameras (front, then back, repeaters, pillars). It drives SEI representative
-// selection and segment/camera ordering in API responses (Story 04). Cameras not
+// selection and segment/camera ordering in API responses. Cameras not
 // in this list sort after these, alphabetically.
 var CameraPriority = []string{
 	"front",
