@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -35,9 +36,11 @@ func withLogging(next http.Handler) http.Handler {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
+		safePath := strings.ReplaceAll(r.URL.Path, "\n", "")
+		safePath = strings.ReplaceAll(safePath, "\r", "")
 		slog.Info("request",
 			"method", r.Method,
-			"path", r.URL.Path,
+			"path", safePath,
 			"status", rec.status,
 			"duration_ms", time.Since(start).Milliseconds(),
 		)
