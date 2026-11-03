@@ -3,7 +3,7 @@ module github.com/jacobalberty/dashmap
 go 1.27.0
 
 require (
-	github.com/jackc/pgx/v5 v5.11.0
+	github.com/jackc/pgx/v5 v5.12.0
 	github.com/pressly/goose/v3 v3.29.0
 	golang.org/x/sync v0.24.0
 	google.golang.org/protobuf v1.36.12
