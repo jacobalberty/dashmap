@@ -53,7 +53,7 @@ jobs:
           ref: ${{ inputs.version || github.ref }}
 
       - name: Set up QEMU (arm64 emulation)
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
       # Install the cosign tool except on PR
       # https://github.com/sigstore/cosign-installer
@@ -112,7 +112,7 @@ jobs:
       # Scan the pushed image; fails the run on fixable HIGH/CRITICAL findings.
       - name: Scan image with Trivy
         if: ${{ github.event_name != 'pull_request' }}
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-and-push.outputs.digest }}
           severity: HIGH,CRITICAL
