@@ -1,6 +1,6 @@
 # Followup: GPX / GeoJSON Track Export
 
-**Depends on:** Story 05  **Status:** Not started
+**Depends on:** browse screen  **Status:** Not started
 
 **Goal:** Add an Export button to the browse screen that downloads the selected range's GPS
 track as GPX or GeoJSON — useful for importing into navigation apps, analysing the route

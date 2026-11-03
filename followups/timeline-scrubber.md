@@ -1,6 +1,6 @@
 # Followup: Timeline Scrubber
 
-**Depends on:** Story 05  **Status:** Not started
+**Depends on:** browse screen  **Status:** Not started
 
 **Goal:** Add a time-of-day scrubber to the browse screen so users can navigate within a
 day at sub-day granularity — complementing the calendar (which picks days) with a moment
@@ -28,6 +28,6 @@ marker (◎) and list row.
 ## Notes
 
 - Build the minimal version first; the track-synced animation can be layered on top.
-- The wireframe's `☐ autoplay next` checkbox belongs in Story 06 (playback), **not** here.
+- The wireframe's `☐ autoplay next` checkbox belongs in the playback view, **not** here.
 - Single-day ranges are the natural scope; multi-day scrubber UX is less clear — skip for now.
 - No new backend calls needed: clips + track are already loaded by `store.applyRange`.
