@@ -13,7 +13,7 @@ MapLibre GL · PostgreSQL · no-transcode raw streaming. Built with **buildx**, 
 
 ## Development
 
-**Prerequisites:** Go 1.26+, Node 24+, Docker, [buf](https://buf.build/docs/installation)
+**Prerequisites:** Go 1.27+, Node 24+, Docker, [buf](https://buf.build/docs/installation)
 
 ```sh
 # Copy and fill in .env

@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"time"
 )
 
@@ -44,8 +45,8 @@ func withLogging(next http.Handler) http.Handler {
 }
 
 func chain(h http.Handler, middlewares ...func(http.Handler) http.Handler) http.Handler {
-	for i := len(middlewares) - 1; i >= 0; i-- {
-		h = middlewares[i](h)
+	for _, middleware := range slices.Backward(middlewares) {
+		h = middleware(h)
 	}
 	return h
 }
