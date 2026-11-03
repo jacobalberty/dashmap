@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Stage 1: build the Vue SPA (platform-independent output, so always run natively)
-FROM --platform=$BUILDPLATFORM node:24-trixie-slim AS frontend
+FROM --platform=$BUILDPLATFORM node:26-trixie-slim AS frontend
 WORKDIR /build
 COPY internal/web/package*.json ./
 RUN npm ci
