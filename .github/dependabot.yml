@@ -6,6 +6,10 @@ updates:
   - package-ecosystem: npm
     directory: /internal/web
     schedule: { interval: weekly }
+    ignore:
+      # TypeScript 7.0.x doesn't work with vue-tsc yet; wait for 7.1.
+      - dependency-name: typescript
+        versions: [">=7.0.0 <7.1.0"]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
