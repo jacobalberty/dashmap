@@ -69,11 +69,13 @@ watch(() => store.selectedCarKey, (key) => {
 })
 
 function flatQuery(q: typeof route.query): Record<string, string> {
-  const out: Record<string, string> = {}
+  // Map avoids writing user-controlled keys as object properties
+  // (prototype pollution / remote property injection).
+  const out = new Map<string, string>()
   for (const [k, v] of Object.entries(q)) {
-    if (typeof v === 'string') out[k] = v
+    if (typeof v === 'string') out.set(k, v)
   }
-  return out
+  return Object.fromEntries(out)
 }
 </script>
 
