@@ -3,6 +3,9 @@ updates:
   - package-ecosystem: gomod
     directory: /
     schedule: { interval: weekly }
+    groups:
+      go-minor-patch:
+        update-types: [minor, patch]
   - package-ecosystem: npm
     directory: /internal/web
     schedule: { interval: weekly }
@@ -10,9 +13,20 @@ updates:
       # TypeScript 7.0.x doesn't work with vue-tsc yet; wait for 7.1.
       - dependency-name: typescript
         versions: [">=7.0.0 <7.1.0"]
+    groups:
+      # Prod and dev deps together; majors stay as individual PRs.
+      npm-minor-patch:
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    groups:
+      # e.g. codeql-action/init+autobuild+analyze move together.
+      github-actions:
+        patterns: ["*"]
   - package-ecosystem: docker
     directory: /
     schedule: { interval: weekly }
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
